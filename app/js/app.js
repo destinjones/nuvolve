@@ -265,35 +265,6 @@ function globalSearch() {
   });
 }
 
-// Address type-ahead: fills street, city, state, zip, and map pin from one box.
-function addressAutocomplete(input, onPick) {
-  const wrap = document.createElement('div');
-  wrap.className = 'search-results hidden';
-  input.parentNode.style.position = 'relative';
-  input.parentNode.appendChild(wrap);
-  input.setAttribute('autocomplete', 'off');
-  let t;
-  input.addEventListener('input', () => {
-    clearTimeout(t);
-    t = setTimeout(async () => {
-      const q = input.value.trim();
-      if (q.length < 5) return wrap.classList.add('hidden');
-      const list = await api(`/nuvolve/app/api/address-suggest?q=${encodeURIComponent(q)}`).catch(() => []);
-      if (!list.length) return wrap.classList.add('hidden');
-      wrap.innerHTML = list.map((a, i) => `<a href="javascript:void 0" data-i="${i}">📍 ${esc(a.label)}</a>`).join('');
-      wrap.classList.remove('hidden');
-      $$('a', wrap).forEach((a) => (a.onmousedown = (e) => {
-        e.preventDefault();
-        const pick = list[Number(a.dataset.i)];
-        input.value = pick.address;
-        wrap.classList.add('hidden');
-        onPick(pick);
-      }));
-    }, 300);
-  });
-  input.addEventListener('blur', () => setTimeout(() => wrap.classList.add('hidden'), 200));
-}
-
 // Fills a form's address fields from a suggestion. Hidden lat/lng inputs carry the map pin.
 function fillAddress(root, a) {
   for (const k of ['city', 'state', 'zip']) if ($(`[name=${k}]`, root)) $(`[name=${k}]`, root).value = a[k] || '';
