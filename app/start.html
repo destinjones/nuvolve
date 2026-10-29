@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Opening the Nuvolve demo</title>
+  <style>
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #0b1210; color: #e6efe9; font: 16px/1.5 system-ui, sans-serif; }
+    .box { text-align: center; padding: 24px; max-width: 420px; }
+    .spin { width: 34px; height: 34px; border: 3px solid #24352d; border-top-color: #7ee2a8; border-radius: 50%; margin: 0 auto 16px; animation: s 0.8s linear infinite; }
+    @keyframes s { to { transform: rotate(360deg); } }
+    .err { color: #feb2b2; }
+    a { color: #7ee2a8; }
+  </style>
+</head>
+<body>
+  <div class="box"><div class="spin"></div><div id="msg">Opening the demo company…</div></div>
+  <script>
+    // Starts the demo's stand-in server, logs in as the chosen role if one was picked, then opens the app.
+    (async function () {
+      var APP = '/nuvolve/app';
+      var q = new URLSearchParams(location.search);
+      var as = q.get('as'), next = q.get('next');
+      var msg = document.getElementById('msg');
+      function fail(t) { document.querySelector('.spin').remove(); msg.className = 'err'; msg.innerHTML = t; }
+      if (!('serviceWorker' in navigator)) return fail('This browser can\'t run the demo. Try a current Chrome, Edge, Safari or Firefox, outside private browsing.');
+      try {
+        await navigator.serviceWorker.register(APP + '/demo-sw.js?v=mvto1yh6', { scope: APP + '/' });
+        await navigator.serviceWorker.ready;
+        if (!navigator.serviceWorker.controller) {
+          await new Promise(function (r) { navigator.serviceWorker.addEventListener('controllerchange', r, { once: true }); setTimeout(r, 3000); });
+        }
+        if (!navigator.serviceWorker.controller) { location.reload(); return; }
+        if (as === 'portal') {
+          var meta = await (await fetch(APP + '/demo-data/meta.json')).json();
+          location.replace(APP + meta.links.find(function (l) { return l.indexOf('/portal/') === 0; }));
+          return;
+        }
+        if (as) {
+          var emails = { owner: 'owner@demo.com', office: 'office@demo.com', manager: 'manager@demo.com', tech: 'mike@demo.com', sales: 'sales@demo.com' };
+          msg.textContent = 'Logging in…';
+          var r = await fetch(APP + '/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: emails[as], password: 'demo1234' }) });
+          if (!r.ok) throw new Error('login failed');
+          try { localStorage.removeItem('nv_loc'); } catch (e) { /* private mode */ }
+          location.replace(APP + (as === 'tech' ? '/tech' : as === 'sales' ? '/sell' : '/'));
+          return;
+        }
+        location.replace(next && next.indexOf(APP + '/') === 0 ? next : APP + '/');
+      } catch (e) {
+        fail('The demo couldn\'t start (' + e.message + '). Reload the page to try again. <br><a href="' + APP + '/">Open the app</a>');
+      }
+    })();
+  </script>
+</body>
+</html>

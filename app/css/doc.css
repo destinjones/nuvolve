@@ -1,0 +1,63 @@
+/* Invoices and pesticide reports: built to print on Letter paper and to read on a phone. */
+* { box-sizing: border-box; }
+body { margin: 0; background: #eef1ee; color: #1b2420; font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; }
+.toolbar { max-width: 860px; margin: 16px auto 0; padding: 0 16px; display: flex; justify-content: flex-end; }
+.toolbar button { font: inherit; font-weight: 600; padding: 8px 14px; border-radius: 8px; border: 1px solid #2f855a; background: #2f855a; color: #fff; cursor: pointer; }
+.doc { max-width: 860px; margin: 12px auto 32px; background: #fff; padding: 36px 40px; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+h2 { font-size: 17px; margin: 26px 0 10px; }
+h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: #5b6b63; margin: 18px 0 6px; }
+a { color: #276749; }
+.small { font-size: 12px; }
+.muted { color: #66756d; }
+.nowrap { white-space: nowrap; }
+.lh { display: flex; justify-content: space-between; gap: 24px; border-bottom: 3px solid #2f855a; padding-bottom: 16px; }
+.lh .co { font-size: 22px; font-weight: 700; color: #1f4d36; margin-bottom: 4px; }
+.lh .right { text-align: right; }
+.lh .title { font-size: 24px; font-weight: 700; letter-spacing: .02em; margin-bottom: 4px; }
+.stamp { display: inline-block; margin-top: 8px; padding: 4px 12px; border: 2px solid; border-radius: 6px; font-weight: 800; letter-spacing: .08em; font-size: 13px; }
+.stamp.paid { color: #276749; border-color: #276749; }
+.stamp.due { color: #975a16; border-color: #d69e2e; }
+.stamp.late, .stamp.void { color: #c53030; border-color: #c53030; }
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+table { border-collapse: collapse; width: 100%; }
+.grid th, .grid td { border-bottom: 1px solid #dfe5e1; padding: 7px 8px; text-align: left; vertical-align: top; }
+.grid th { background: #f3f6f4; font-size: 12px; color: #44524b; font-weight: 600; }
+.num { text-align: right !important; }
+.lines { margin-top: 22px; }
+.totals { width: 300px; margin: 10px 0 0 auto; }
+.totals td { padding: 5px 8px; text-align: right; }
+.totals td:first-child { color: #44524b; }
+.totals .strong td { font-weight: 700; border-top: 1px solid #ccd5d0; }
+.totals .due td { font-size: 17px; font-weight: 800; background: #f3f6f4; }
+.pay { display: flex; gap: 18px; align-items: center; margin-top: 22px; padding: 14px; border: 1px dashed #9ab7a6; border-radius: 10px; }
+.pay h3 { margin-top: 0; }
+.pay p { margin: 4px 0; word-break: break-all; }
+.svc { margin-top: 28px; border-top: 1px solid #dfe5e1; }
+.facts { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 24px; margin-bottom: 12px; }
+.facts .k { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: #66756d; }
+.sig { margin-top: 12px; }
+.sig img { max-width: 260px; max-height: 90px; border-bottom: 1px solid #333; display: block; }
+.safety { background: #f7faf8; border-left: 3px solid #2f855a; padding: 8px 10px; margin-top: 14px; }
+.kpis { display: flex; gap: 12px; margin: 18px 0 4px; }
+.kpis div { flex: 1; background: #f3f6f4; border-radius: 8px; padding: 10px 12px; }
+.kpis b { display: block; font-size: 22px; }
+.kpis span { font-size: 12px; color: #5b6b63; }
+footer { margin-top: 28px; padding-top: 10px; border-top: 1px solid #dfe5e1; }
+@media (max-width: 640px) {
+  .doc { padding: 20px 16px; margin: 8px; border-radius: 8px; }
+  .lh, .two, .facts { display: block; }
+  .lh .right { text-align: left; margin-top: 12px; }
+  .two > div { margin-bottom: 8px; }
+  .grid { display: block; overflow-x: auto; }
+  .totals { width: 100%; }
+  .kpis { flex-direction: column; }
+}
+@media print {
+  body { background: #fff; }
+  .toolbar { display: none; }
+  .doc { box-shadow: none; margin: 0; padding: 0; max-width: none; }
+  a { color: inherit; text-decoration: none; }
+  tr { page-break-inside: avoid; }
+}
+.grid td.hit { background: #fff5f5; color: #c53030; font-weight: 700; }
+.sumrow td { font-weight: 700; background: #f7faf8; }

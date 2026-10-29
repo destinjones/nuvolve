@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#050807">
+<title>Nuvolve CRM · the pest control CRM that runs the route</title>
+<meta name="description" content="Nuvolve is a pest control CRM for owner-operators up to multi-branch companies: routes, the tech's phone app, billing and autopay, termite and commercial work, door-to-door sales, payroll and QuickBooks. Explore a live demo company in your browser.">
+<meta name="author" content="Destin Jones">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Nuvolve CRM · the pest control CRM that runs the route">
+<meta property="og:description" content="Routes, the tech app, billing, termite, commercial, door-to-door, payroll and QuickBooks in one place. Explore a demo company in your browser.">
+<meta property="og:image" content="shots/today.jpg">
+<link rel="stylesheet" href="fonts/fonts.css">
+<style>
+:root{
+  --bg:#050807; --panel:#09100d; --panel-2:#0e1813; --line:#17241e; --line-strong:#25372e;
+  --ink:#e6efe9; --ink-dim:#8fa69a; --ink-faint:#5a6f64; --accent:#7ee2a8; --accent-dim:rgba(126,226,168,.14); --brand:#2f855a; --warn:#ecc85c; --hot:#ff9070;
+  --display:"Big Shoulders Display","Arial Narrow",sans-serif; --body:"Barlow",system-ui,-apple-system,"Segoe UI",sans-serif; --mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+  --gut:clamp(16px,4vw,56px); --max:1160px; color-scheme:dark;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:72px}
+body{margin:0;background:var(--bg);color:var(--ink);font:17px/1.6 var(--body);-webkit-font-smoothing:antialiased;overflow-x:hidden}
+a{color:inherit} img{display:block;max-width:100%;height:auto}
+.wrap{max-width:var(--max);margin:0 auto;padding:0 var(--gut)}
+.eyebrow{font:500 12px/1.3 var(--mono);letter-spacing:.22em;text-transform:uppercase;color:var(--accent);display:flex;align-items:center;gap:10px;margin:0 0 18px}
+.eyebrow::before{content:"";width:22px;height:1px;background:currentColor;flex:0 0 auto}
+h1,h2,h3{font-family:var(--display);font-weight:900;text-transform:uppercase;letter-spacing:.01em;line-height:.95;margin:0;text-wrap:balance}
+h1{font-size:clamp(46px,6.4vw,84px)} h2{font-size:clamp(34px,5vw,60px)} h3{font-size:24px;line-height:1.05}
+h1 span,h2 span{color:var(--accent)}
+p{margin:0 0 16px} .dim{color:var(--ink-dim)}
+nav{position:sticky;top:0;z-index:50;background:rgba(5,8,7,.84);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-bottom:1px solid var(--line)}
+nav .wrap{display:flex;align-items:center;gap:20px;min-height:64px;max-width:none}
+.brand{display:flex;align-items:center;gap:12px;text-decoration:none;font:900 22px/1 var(--display);letter-spacing:.08em;text-transform:uppercase}
+.brand img{width:30px;height:30px}
+nav .links{display:flex;gap:22px;margin-left:auto;font:500 13px var(--mono);letter-spacing:.12em;text-transform:uppercase;align-items:center}
+nav .links a{text-decoration:none;color:var(--ink-dim);padding:8px 0} nav .links a:hover{color:var(--ink)}
+nav .links a.go{color:#04100a;background:var(--accent);padding:10px 14px;border-radius:6px;font-weight:600}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:10px;padding:14px 22px;min-height:48px;border:1px solid var(--line-strong);background:rgba(9,16,13,.7);color:var(--ink);text-decoration:none;font:600 13px var(--mono);letter-spacing:.14em;text-transform:uppercase;border-radius:6px;cursor:pointer}
+.btn:hover{border-color:var(--accent)} .btn.primary{background:var(--accent);color:#04100a;border-color:var(--accent)} .btn.primary:hover{filter:brightness(1.08)}
+.hero{position:relative;padding:clamp(56px,9vw,110px) 0 clamp(48px,7vw,90px);border-bottom:1px solid var(--line);
+  background:radial-gradient(900px 520px at 78% 30%,rgba(47,133,90,.22),transparent 70%),radial-gradient(600px 400px at 10% 100%,rgba(126,226,168,.07),transparent 70%)}
+.hero .wrap{display:grid;grid-template-columns:minmax(0,1.02fr) minmax(0,1fr);gap:clamp(28px,4vw,56px);align-items:center}
+.lead{font-size:clamp(17px,1.5vw,19px);color:var(--ink-dim);max-width:560px;margin-top:22px} .lead b{color:var(--ink)}
+.ctas{display:flex;gap:12px;flex-wrap:wrap;margin:28px 0 18px}
+.fine{font:400 12px/1.6 var(--mono);color:var(--ink-faint)}
+.stage{position:relative;min-height:300px}
+.browser{border:1px solid var(--line-strong);border-radius:10px;overflow:hidden;background:var(--panel);box-shadow:0 30px 80px rgba(0,0,0,.55)}
+.browser .bar{display:flex;align-items:center;gap:6px;padding:8px 10px;border-bottom:1px solid var(--line);background:var(--panel-2)}
+.browser .bar i{width:9px;height:9px;border-radius:50%;background:var(--line-strong)}
+.browser .bar span{margin-left:10px;font:400 11px var(--mono);color:var(--ink-faint);background:var(--bg);padding:3px 10px;border-radius:4px;flex:1;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.phone{position:absolute;right:-10px;bottom:-34px;width:31%;border:6px solid #111a15;border-radius:24px;overflow:hidden;background:#000;box-shadow:0 24px 60px rgba(0,0,0,.6)}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);border-bottom:1px solid var(--line)}
+.stats div{padding:28px var(--gut) 28px 24px;border-right:1px solid var(--line)} .stats div:last-child{border-right:0}
+.stats b{display:block;font:900 clamp(34px,4vw,50px)/1 var(--display);color:var(--accent);margin-bottom:10px}
+.stats span{font:400 12px/1.6 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-dim)}
+section{padding:clamp(64px,9vw,110px) 0;border-bottom:1px solid var(--line)}
+section .intro{max-width:720px;margin:20px 0 40px;color:var(--ink-dim)}
+.logins{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line);border:1px solid var(--line)}
+.login{background:var(--panel);padding:24px;display:flex;flex-direction:column;gap:10px}
+.login .role{font:500 12px var(--mono);letter-spacing:.18em;text-transform:uppercase;color:var(--accent)}
+.login h3{font-size:28px}
+.login p{color:var(--ink-dim);font-size:15px;margin:0;flex:1}
+.cred{font:400 13px/1.7 var(--mono);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:10px 12px;color:var(--ink)}
+.cred em{font-style:normal;color:var(--ink-faint)}
+.login .btn{margin-top:6px}
+.note{margin-top:22px;font-size:15px;color:var(--ink-dim);max-width:820px}
+.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:22px}
+.feat{border:1px solid var(--line);background:var(--panel);border-radius:10px;overflow:hidden;display:flex;flex-direction:column}
+.feat img{border-bottom:1px solid var(--line);aspect-ratio:16/10;object-fit:cover;object-position:top left;width:100%}
+.feat .txt{padding:20px 22px 22px}
+.feat .k{font:500 11px var(--mono);letter-spacing:.2em;text-transform:uppercase;color:var(--accent);margin-bottom:8px}
+.feat h3{margin-bottom:10px} .feat p{color:var(--ink-dim);font-size:15px;margin:0}
+.more{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line);border:1px solid var(--line);margin-top:40px}
+.more div{background:var(--panel);padding:20px 22px} .more b{display:block;font:700 20px/1.1 var(--display);text-transform:uppercase;letter-spacing:.02em;margin-bottom:6px}
+.more span{color:var(--ink-dim);font-size:14px}
+.who{display:grid;grid-template-columns:repeat(5,1fr);gap:1px;background:var(--line);border:1px solid var(--line)}
+.who div{background:var(--panel);padding:22px}
+.who b{display:block;font:900 22px/1 var(--display);text-transform:uppercase;color:var(--accent);margin-bottom:10px}
+.who span{color:var(--ink-dim);font-size:14px}
+.how{display:grid;grid-template-columns:1fr 1fr;gap:40px} .how h3{margin-bottom:12px} .how p{color:var(--ink-dim)}
+.final{text-align:left} .final h2{max-width:900px}
+footer{padding:36px 0 60px;font:400 12px/1.8 var(--mono);color:var(--ink-faint)} footer a{color:var(--ink-dim)}
+@media (max-width:980px){
+  .hero .wrap,.how{grid-template-columns:1fr} .stage{margin-top:10px;margin-right:12px}
+  .stats{grid-template-columns:repeat(2,1fr)} .stats div:nth-child(2){border-right:0} .stats div:nth-child(-n+2){border-bottom:1px solid var(--line)}
+  .logins,.more{grid-template-columns:1fr 1fr} .who{grid-template-columns:1fr 1fr} .grid{grid-template-columns:1fr}
+  nav .links a:not(.go){display:none}
+}
+@media (max-width:600px){ .logins,.more,.who{grid-template-columns:1fr} .phone{width:36%;right:-8px} }
+</style>
+</head>
+<body>
+<nav><div class="wrap">
+  <a class="brand" href="#top"><img src="favicon.svg" alt="">Nuvolve</a>
+  <div class="links">
+    <a href="#try">Try it</a><a href="#features">Features</a><a href="#who">Who it's for</a><a href="#how">The demo</a>
+    <a class="go" href="/nuvolve/app/start.html?as=owner">Launch Nuvolve</a>
+  </div>
+</div></nav>
+
+<header class="hero" id="top"><div class="wrap">
+  <div>
+    <p class="eyebrow">Pest control CRM · one truck to many branches</p>
+    <h1>Run the route. <span>Not the paperwork.</span></h1>
+    <p class="lead">Nuvolve runs a pest control company from the first phone call to the last payment: <b>routes and the tech's phone app, billing with autopay and tips, termite and commercial work, door-to-door sales, payroll and QuickBooks</b>. One place, built for the owner who still runs a route.</p>
+    <div class="ctas">
+      <a class="btn primary" href="/nuvolve/app/start.html?as=owner">Launch the demo</a>
+      <a class="btn" href="#try">See every login</a>
+    </div>
+    <p class="fine">A full demo company runs right in your browser · no sign-up<br>Lone Star Pest Pros, recorded October 29, 2026 · look at anything, changes aren't saved</p>
+  </div>
+  <div class="stage">
+    <div class="browser"><div class="bar"><i></i><i></i><i></i><span>Lone Star Pest Pros · Today</span></div><img src="shots/today.jpg" alt="The Today page: routes in progress, money collected, past due and alerts" width="1366" height="860"></div>
+    <div class="phone"><img src="shots/tech.jpg" alt="The tech's phone: today's route in order with arrival times" width="390" height="844"></div>
+  </div>
+</div></header>
+
+<div class="stats">
+  <div><b>517</b><span>active customers in the demo company, on 518 service plans</span></div>
+  <div><b>$23,745</b><span>collected this month, from $25,520 billed</span></div>
+  <div><b>$7,940</b><span>still owed, $6,015 of it past due on 51 invoices</span></div>
+  <div><b>13</b><span>stops on today's routes for 3 techs across 2 branches</span></div>
+</div>
+
+<section id="try"><div class="wrap">
+  <p class="eyebrow">Try it</p>
+  <h2>Six ways in. <span>One real-looking company.</span></h2>
+  <p class="intro">Lone Star Pest Pros is a made-up pest company in Richardson and Plano, Texas, with customers going back more than two years: residential and commercial customers, paid and unpaid invoices, termite warranties, stations, routes and reviews. Pick who you want to be. The password for every login is <b>demo1234</b>.</p>
+  <div class="logins">
+    <div class="login"><div class="role">Owner</div><h3>Destin</h3><p>Everything: Today, insights, Ask Nuvolve, payroll, QuickBooks, marketing, settings and buying another company.</p>
+      <div class="cred">owner@demo.com<br><em>password</em> demo1234</div><a class="btn primary" href="/nuvolve/app/start.html?as=owner">Open as owner</a></div>
+    <div class="login"><div class="role">Office rep</div><h3>Amy Office</h3><p>Answers the phone, books and moves visits, takes payments and works the inbox. No settings or pay.</p>
+      <div class="cred">office@demo.com<br><em>password</em> demo1234</div><a class="btn" href="/nuvolve/app/start.html?as=office">Open as office rep</a></div>
+    <div class="login"><div class="role">Branch manager</div><h3>Sam Reyes</h3><p>Runs the Plano / Allen branch and only sees that branch: its customers, routes, numbers and campaigns.</p>
+      <div class="cred">manager@demo.com<br><em>password</em> demo1234</div><a class="btn" href="/nuvolve/app/start.html?as=manager">Open as manager</a></div>
+    <div class="login"><div class="role">Technician · phone</div><h3>Mike Torres</h3><p>Today's route in order with arrival times, each stop's notes and history, his truck stock, licenses and pay.</p>
+      <div class="cred">mike@demo.com<br><em>password</em> demo1234</div><a class="btn" href="/nuvolve/app/start.html?as=tech">Open the tech app</a></div>
+    <div class="login"><div class="role">Sales rep · phone</div><h3>Tyler Brooks</h3><p>Door-to-door: the map of knocked doors and territories, his leads, quotes and the leaderboard.</p>
+      <div class="cred">sales@demo.com<br><em>password</em> demo1234</div><a class="btn" href="/nuvolve/app/start.html?as=sales">Open the sales app</a></div>
+    <div class="login"><div class="role">Customer · no login</div><h3>The pay page</h3><p>What a homeowner sees from their text: balance, pay with a tip that goes to the tech, service history and upcoming visits.</p>
+      <div class="cred">No password<br><em>opened from a text or email</em></div><a class="btn" href="/nuvolve/app/start.html?as=portal">Open a customer's page</a></div>
+  </div>
+  <p class="note">The tech and sales apps are built for phones. On a computer they open in a narrow column; on a phone they fill the screen. Every page has a small <b>DEMO</b> button in the corner to switch roles.</p>
+</div></section>
+
+<section id="features"><div class="wrap">
+  <p class="eyebrow">See it</p>
+  <h2>Every part of the job. <span>On one screen.</span></h2>
+  <p class="intro">Each picture is the demo you can open above, taken in a headless browser while the site was built.</p>
+  <div class="grid">
+    <div class="feat"><img src="shots/routes.jpg" alt="Route map with stops in order" loading="lazy"><div class="txt"><div class="k">Routes &amp; dispatch</div><h3>The fastest order, kept to the promised window</h3><p>One click orders a tech's day by drive time and keeps every promised time window. Dispatch shows every truck on a live map with its next stop and arrival time, and a sick day reshuffles stops to techs who hold the right license.</p></div></div>
+    <div class="feat"><img src="shots/customer.jpg" alt="A customer's account with plans, visits and invoices" loading="lazy"><div class="txt"><div class="k">Customers</div><h3>The whole account, in one place</h3><p>Properties, plans, every visit with products and notes, invoices, payments, signed agreements, texts and emails, referrals and the cancel-risk score.</p></div></div>
+    <div class="feat"><img src="shots/billing.jpg" alt="Billing with open and past-due invoices" loading="lazy"><div class="txt"><div class="k">Billing</div><h3>An invoice after every stop, autopay after that</h3><p>Open, past due and paid at a glance, reminders that go out on their own, card on file and a pay page with tips that go 100% to the tech.</p></div></div>
+    <div class="feat"><img src="shots/schedule.jpg" alt="Weekly schedule board" loading="lazy"><div class="txt"><div class="k">Schedule</div><h3>Twelve months of visits, kept full</h3><p>Every plan keeps a year of visits on the calendar. Drag to move, see who has room, and catch stops that were missed or have no tech.</p></div></div>
+    <div class="feat"><img src="shots/termite.jpg" alt="Termite contracts and renewals" loading="lazy"><div class="txt"><div class="k">Termite</div><h3>Warranties that renew on time</h3><p>Bait, liquid and pre-treat contracts with renewal reminders, bait station maps, graphs of the structure, and WDI reports signed with the inspector's tracked license.</p></div></div>
+    <div class="feat"><img src="shots/commercial.jpg" alt="Commercial accounts with sites and stations" loading="lazy"><div class="txt"><div class="k">Commercial</div><h3>Many sites, every station, audit ready</h3><p>Restaurants and plants with their own sites, contacts and stations, sightings logged by site staff, activity trends, and a binder for the health inspector.</p></div></div>
+    <div class="feat"><img src="shots/accounting.jpg" alt="Payroll for the current pay period" loading="lazy"><div class="txt"><div class="k">Payroll &amp; QuickBooks</div><h3>Pay the techs right, keep the books clean</h3><p>Hourly, production, salary and commission with the time clock and overtime, pay runs you approve, and invoices, payments and payroll posted to QuickBooks.</p></div></div>
+    <div class="feat"><img src="shots/sales.jpg" alt="Sales pipeline board" loading="lazy"><div class="txt"><div class="k">Sales</div><h3>From the knock to a signed contract</h3><p>A pipeline board for leads and quotes, door-to-door reps on a map with territories, contracts signed at the door with the 3-day right to cancel, and commissions that follow.</p></div></div>
+  </div>
+  <div class="more">
+    <div><b>Inbox &amp; AI receptionist</b><span>Every text and missed call in one inbox. Missed calls get a text back and can be booked by the receptionist.</span></div>
+    <div><b>Ask Nuvolve</b><span>Ask about your own numbers in plain English: who owes you, your slowest routes, which plans to raise.</span></div>
+    <div><b>Retention</b><span>A cancel-risk score with plain reasons, save offers before they leave and win-backs after.</span></div>
+    <div><b>Marketing</b><span>Referrals paid as account credit, seasonal campaigns to customers missing a service, and lead source ROI.</span></div>
+    <div><b>Inventory</b><span>Chemical in the warehouse and on every truck, taken off automatically from each ticket, with labels and SDS.</span></div>
+    <div><b>Documents</b><span>Design your own invoices, service reports, state pesticide records and contracts, then send or sign them.</span></div>
+    <div><b>Licenses &amp; training</b><span>Every applicator license and CEU, with warnings before they lapse and rules that keep unlicensed techs off restricted work.</span></div>
+    <div><b>Branches &amp; acquisitions</b><span>Walls between branches, and buying another company's book with a code, duplicates caught and one-click undo.</span></div>
+    <div><b>Open API &amp; Zapier</b><span>API keys with scopes, signed webhooks and a Zapier app for everything else you use.</span></div>
+  </div>
+</div></section>
+
+<section id="who"><div class="wrap">
+  <p class="eyebrow">Who it's for</p>
+  <h2>Tested by running <span>five kinds of company</span></h2>
+  <p class="intro">Before this site was built, five pretend companies ran a stretch of real work through every feature at once, to catch what breaks where features meet.</p>
+  <div class="who">
+    <div><b>One truck</b><span>A solo operator moves over from GorillaDesk, works his day with no signal, gets paid in the portal and syncs QuickBooks.</span></div>
+    <div><b>Termite shop</b><span>Licensed and unlicensed techs, WDI reports for real estate deals, and bait contracts that renew every year.</span></div>
+    <div><b>Commercial</b><span>Restaurant groups sign online, every site has stations, and the binder holds up to an audit.</span></div>
+    <div><b>Door to door</b><span>Reps knock their territory, sign at the door, and a cancel inside 3 days stops the plan and the commission.</span></div>
+    <div><b>Regional</b><span>Two branches with a manager each, Zapier listening, and another company's book bought as a third branch.</span></div>
+  </div>
+</div></section>
+
+<section id="how"><div class="wrap">
+  <p class="eyebrow">The demo</p>
+  <h2>The real app, <span>answering from a recording</span></h2>
+  <div class="how" style="margin-top:36px">
+    <div><h3>What you're clicking</h3><p>This is Nuvolve's own app, page for page. Nuvolve normally runs on a server with a database. For this site, a seeded demo company was run on the real server and every answer it gave was saved. A small helper in your browser plays those answers back, so every page, filter and customer opens without a server.</p></div>
+    <div><h3>What it can't do</h3><p>Saving is off, so adding a customer, completing a stop or taking a payment shows a note instead of saving. The demo's calendar stays on the day it was recorded, so today's routes always line up. To run it for real, the app starts with one command on any server with Node.js.</p></div>
+  </div>
+</div></section>
+
+<section class="final"><div class="wrap">
+  <h2>Open the company. <span>Look around.</span></h2>
+  <div class="ctas"><a class="btn primary" href="/nuvolve/app/start.html?as=owner">Launch Nuvolve</a><a class="btn" href="#try">Pick a different login</a></div>
+</div></section>
+
+<footer><div class="wrap">Nuvolve CRM · by Destin Jones · Lone Star Pest Pros and everyone in it are made up · demo recorded October 29, 2026</div></footer>
+</body>
+</html>

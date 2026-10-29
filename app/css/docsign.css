@@ -1,0 +1,88 @@
+/* The signing bar, sheets and signature pad on a contract's link (/nuvolve/app/d/:token). The contract itself is styled by docrender. */
+:root { --ds-green: #2f855a; --ds-ink: #1a202c; --ds-muted: #5f6b7a; --ds-line: #d5dce3; --ds-flag: #fbd34d; }
+body[data-sign] { padding-bottom: 104px !important; }
+body:not([data-sign="awaiting"]) .nv-sg-flag { display: none; }
+.ds-ui, .ds-ui * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; }
+.ds-ui button { font: inherit; cursor: pointer; }
+
+/* bottom bar */
+.ds-bar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; background: #fff; border-top: 1px solid var(--ds-line); box-shadow: 0 -4px 18px rgba(16, 24, 40, .1);
+  padding: 12px max(14px, env(safe-area-inset-right)) calc(12px + env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left)); }
+.ds-bar-in { max-width: 880px; margin: 0 auto; display: flex; align-items: center; gap: 12px; }
+.ds-msg { flex: 1; min-width: 0; font-size: 14px; color: var(--ds-ink); line-height: 1.35; }
+.ds-msg b { font-weight: 700; }
+.ds-msg small { display: block; color: var(--ds-muted); font-size: 12.5px; }
+.ds-prog { height: 4px; background: #e9edf0; border-radius: 4px; margin-top: 6px; overflow: hidden; }
+.ds-prog i { display: block; height: 100%; background: var(--ds-green); width: 0; transition: width .25s; }
+.ds-btn { border: 1px solid var(--ds-line); background: #fff; color: var(--ds-ink); border-radius: 10px; padding: 11px 16px; font-weight: 600; font-size: 15px; white-space: nowrap; text-decoration: none; display: inline-flex; align-items: center; gap: 6px; }
+.ds-btn.primary { background: var(--ds-green); border-color: var(--ds-green); color: #fff; }
+.ds-btn.warn { background: #fff7e6; border-color: #f0b44c; color: #7a4b00; }
+.ds-btn.danger { background: #c53030; border-color: #c53030; color: #fff; }
+.ds-btn.link { border: 0; background: none; color: var(--ds-muted); padding: 11px 6px; font-weight: 500; text-decoration: underline; }
+.ds-btn:disabled { opacity: .55; cursor: default; }
+.ds-btn:focus-visible, .ds-spot-focus:focus-visible { outline: 3px solid #90cdf4; outline-offset: 2px; }
+@media (max-width: 560px) { .ds-bar-in { flex-wrap: wrap; gap: 8px; } .ds-msg { flex-basis: 100%; } .ds-bar-in .ds-btn { flex: 1; justify-content: center; } .ds-bar-in .ds-btn.link { flex: 0 0 auto; } }
+
+/* banners for signed, cancelled and closed contracts */
+.ds-banner { max-width: 8.5in; margin: 0 auto 14px; border-radius: 10px; padding: 12px 16px; font-size: 14.5px; line-height: 1.45; border: 1px solid; }
+.ds-banner.ok { background: #f0fff4; border-color: #9ae6b4; color: #22543d; }
+.ds-banner.info { background: #ebf8ff; border-color: #90cdf4; color: #2a4365; }
+.ds-banner.stop { background: #fff5f5; border-color: #feb2b2; color: #742a2a; }
+
+/* the spots on the page */
+.nv-sg-open, .nv-in-open { cursor: pointer; border-radius: 6px; transition: box-shadow .2s, background .2s; }
+.nv-sg-open:hover .nv-sg-flag { filter: brightness(.96); }
+.nv-sg-open.ds-done .nv-sg-box img { max-height: 100%; max-width: 100%; }
+.ds-pulse { animation: ds-pulse 1.1s ease-out 2; }
+@keyframes ds-pulse { 0% { box-shadow: 0 0 0 0 rgba(251, 211, 77, .95); } 100% { box-shadow: 0 0 0 14px rgba(251, 211, 77, 0); } }
+.nv-in-open { padding: 3px 4px; margin-left: -4px; margin-right: -4px; background: rgba(251, 211, 77, .16); outline: 1.5px dashed #d69e2e; outline-offset: 1px; }
+.nv-in-open.ds-done { background: rgba(47, 133, 90, .07); outline-color: #9ae6b4; }
+.nv-in-open .ds-field { width: 100%; border: 1px solid #b7c2cc; border-radius: 6px; padding: 7px 9px; font: inherit; font-size: max(16px, 1em); color: inherit; background: #fff; }
+.nv-in-open textarea.ds-field { resize: vertical; min-height: 3.2em; }
+.nv-in-open .nv-in-opt { cursor: pointer; padding: 4px 8px; border-radius: 6px; }
+.nv-in-open .nv-in-opt:hover { background: rgba(47, 133, 90, .08); }
+.nv-in-open.nv-in-check { display: flex; gap: 8px; align-items: flex-start; }
+.ds-req-mark { color: #c53030; font-weight: 700; margin-left: 2px; }
+
+/* sheets (modals) */
+.ds-cover { position: fixed; inset: 0; z-index: 40; background: rgba(16, 24, 40, .48); display: flex; align-items: flex-end; justify-content: center; padding: 0; }
+@media (min-width: 640px) { .ds-cover { align-items: center; padding: 24px; } }
+.ds-sheet { background: #fff; width: 100%; max-width: 560px; max-height: 92vh; overflow: auto; border-radius: 16px 16px 0 0; padding: 22px 20px calc(20px + env(safe-area-inset-bottom)); color: var(--ds-ink); font-size: 15px; line-height: 1.5; }
+@media (min-width: 640px) { .ds-sheet { border-radius: 14px; padding: 24px 26px; } }
+.ds-sheet h2 { margin: 0 0 6px; font-size: 20px; line-height: 1.25; }
+.ds-sheet p { margin: 0 0 12px; }
+.ds-sheet .ds-sub { color: var(--ds-muted); font-size: 14px; }
+.ds-sheet label.ds-l { display: block; font-weight: 600; font-size: 14px; margin: 14px 0 6px; }
+.ds-sheet input[type=text], .ds-sheet textarea { width: 100%; border: 1px solid #b7c2cc; border-radius: 8px; padding: 10px 12px; font: inherit; font-size: 16px; }
+.ds-sheet textarea { min-height: 80px; resize: vertical; }
+.ds-check { display: flex; gap: 10px; align-items: flex-start; margin: 14px 0 4px; font-size: 14.5px; cursor: pointer; }
+.ds-check input { width: 20px; height: 20px; margin: 1px 0 0; flex: 0 0 auto; accent-color: var(--ds-green); }
+.ds-acts { display: flex; gap: 10px; justify-content: flex-end; margin-top: 18px; flex-wrap: wrap; }
+@media (max-width: 480px) { .ds-acts .ds-btn { flex: 1; justify-content: center; } }
+.ds-disc { border: 1px solid var(--ds-line); border-radius: 10px; margin-top: 12px; }
+.ds-disc summary { padding: 10px 12px; font-weight: 600; font-size: 14px; cursor: pointer; }
+.ds-disc div { padding: 0 14px 6px; font-size: 13.5px; color: #2d3748; max-height: 260px; overflow: auto; }
+.ds-err { color: #c53030; font-size: 14px; margin-top: 10px; min-height: 1em; }
+
+/* adopt a signature */
+.ds-tabs { display: flex; gap: 6px; margin: 14px 0 10px; border-bottom: 1px solid var(--ds-line); }
+.ds-tab { border: 0; background: none; padding: 9px 12px; font-weight: 600; color: var(--ds-muted); border-bottom: 3px solid transparent; margin-bottom: -1px; }
+.ds-tab[aria-selected="true"] { color: var(--ds-green); border-bottom-color: var(--ds-green); }
+.ds-pad-wrap { position: relative; border: 1.5px dashed #9aa8b6; border-radius: 10px; background: #fcfdfd; }
+.ds-pad { display: block; width: 100%; height: 170px; touch-action: none; cursor: crosshair; border-radius: 10px; }
+.ds-pad.ini { height: 120px; }
+.ds-pad-line { position: absolute; left: 18px; right: 18px; bottom: 34px; border-top: 1px solid #c3ccd5; pointer-events: none; }
+.ds-pad-x { position: absolute; left: 14px; bottom: 38px; color: #9aa8b6; font-size: 18px; pointer-events: none; }
+.ds-pad-hint { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #9aa8b6; pointer-events: none; font-size: 14px; }
+.ds-pad-tools { display: flex; justify-content: space-between; align-items: center; margin-top: 6px; font-size: 13px; color: var(--ds-muted); }
+.ds-typed { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+.ds-style { border: 1.5px solid var(--ds-line); border-radius: 10px; background: #fff; padding: 6px 10px; min-width: 0; flex: 1 1 140px; }
+.ds-style[aria-pressed="true"] { border-color: var(--ds-green); box-shadow: 0 0 0 2px rgba(47, 133, 90, .25); }
+.ds-style img { display: block; max-width: 100%; height: 46px; margin: 0 auto; object-fit: contain; }
+.ds-legal { font-size: 12.5px; color: var(--ds-muted); margin-top: 12px; }
+
+/* after signing in person */
+.ds-done-big { text-align: center; padding: 8px 0 4px; }
+.ds-done-big .ds-tick { width: 64px; height: 64px; border-radius: 50%; background: #c6f6d5; color: #22543d; font-size: 34px; line-height: 64px; margin: 0 auto 10px; }
+
+@media print { .ds-ui, .ds-banner { display: none !important; } body[data-sign] { padding-bottom: 0 !important; } .nv-in-open { outline: 0; background: none; } }

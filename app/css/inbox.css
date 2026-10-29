@@ -1,0 +1,39 @@
+/* Inbox: texts and missed calls, answered by the team or the AI receptionist. */
+.ib-modes { display: flex; gap: 18px; flex-wrap: wrap; margin: -6px 0 14px; }
+.inbox { display: grid; grid-template-columns: 330px 1fr; gap: 16px; align-items: start; }
+@media (max-width: 1000px) { .inbox { grid-template-columns: 1fr; } }
+
+.ib-list { max-height: 72vh; display: flex; flex-direction: column; }
+.ib-tabs { display: flex; border-bottom: 1px solid var(--line); }
+.ib-tabs a { flex: 1; text-align: center; padding: 10px 6px; font-size: 13px; font-weight: 600; color: var(--muted); text-decoration: none; border-bottom: 2px solid transparent; }
+.ib-tabs a.on { color: var(--brand-dark); border-bottom-color: var(--brand); }
+.ib-search { padding: 10px; border-bottom: 1px solid var(--line); }
+#ib-rows { overflow-y: auto; }
+.ib-row { display: block; padding: 10px 12px; border-bottom: 1px solid var(--line); color: var(--ink); text-decoration: none; }
+.ib-row:hover { background: #f8faf9; }
+.ib-row.on { background: var(--brand-soft); }
+.ib-row.unread b { color: var(--brand-dark); }
+.ib-top { display: flex; justify-content: space-between; gap: 8px; }
+.ib-prev { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin: 2px 0 4px; }
+.ib-tags { display: flex; gap: 4px; flex-wrap: wrap; }
+
+.ib-thread { display: flex; flex-direction: column; min-height: 420px; }
+.ib-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.ib-head h2 { margin: 0 0 2px; }
+.ib-visits { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+.ib-visits a { background: var(--info-soft); color: var(--info); border-radius: 999px; padding: 3px 10px; text-decoration: none; }
+.ib-msgs { flex: 1; overflow-y: auto; max-height: 52vh; padding: 8px 2px; display: flex; flex-direction: column; gap: 8px; }
+.ib-msg { display: flex; flex-direction: column; max-width: 78%; }
+.ib-msg.in { align-self: flex-start; }
+.ib-msg.out { align-self: flex-end; align-items: flex-end; }
+.ib-bubble { padding: 9px 12px; border-radius: 16px; white-space: pre-wrap; word-wrap: break-word; font-size: 14px; line-height: 1.4; }
+.ib-msg.in .ib-bubble { background: #edf2f7; border-bottom-left-radius: 4px; }
+.ib-msg.out .ib-bubble { background: var(--brand); color: #fff; border-bottom-right-radius: 4px; }
+.ib-msg.out.ai .ib-bubble { background: var(--brand-soft); color: var(--brand-dark); border: 1px solid #c6e6d3; }
+.ib-meta { margin-top: 2px; font-size: 11px; }
+.ib-meta .danger { color: var(--danger); }
+.ib-event { align-self: center; font-size: 12px; color: var(--muted); background: #f7f7f2; border-radius: 999px; padding: 3px 10px; }
+.ib-compose { display: flex; gap: 8px; align-items: flex-end; margin: 10px 0 4px; }
+.ib-compose textarea { flex: 1; resize: vertical; }
+.ib-try { display: grid; gap: 12px; grid-template-columns: 180px 1fr auto auto; align-items: end; }
+@media (max-width: 700px) { .ib-try { grid-template-columns: 1fr; } .ib-try .btn { width: 100%; } }

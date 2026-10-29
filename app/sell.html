@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <script src="/nuvolve/app/demo-boot.js?v=mvto1yh6"></script>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#1f2d27">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>Door to Door</title>
+  <link rel="stylesheet" href="/nuvolve/app/css/styles.css">
+  <link rel="stylesheet" href="/nuvolve/app/vendor/leaflet/leaflet.css">
+  <style>
+    html, body { height: 100%; }
+    body { background: #eef2f0; overscroll-behavior: none; }
+    .top { background: #1f2d27; color: #fff; padding: 10px 14px; position: sticky; top: 0; z-index: 1000; display: flex; align-items: center; gap: 10px; }
+    .top h1 { font-size: 18px; margin: 0; flex: 1; min-width: 0; }
+    .top .sub { color: #a8c3b4; font-size: 13px; }
+    .top .tally { display: flex; gap: 12px; font-size: 13px; color: #cfe0d6; text-align: center; }
+    .top .tally b { display: block; color: #fff; font-size: 17px; }
+    .wrap { padding: 12px; max-width: 760px; margin: 0 auto; padding-bottom: 90px; }
+    .tabbar { position: fixed; bottom: 0; left: 0; right: 0; display: flex; background: #fff; border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom); z-index: 1001; }
+    .tabbar a { flex: 1; text-align: center; padding: 8px; font-size: 12px; color: var(--muted); text-decoration: none; font-weight: 600; }
+    .tabbar a.on { color: var(--brand-dark); }
+    .tabbar .count { background: var(--danger); color: #fff; border-radius: 999px; padding: 0 6px; font-size: 11px; margin-left: 2px; }
+    #map { height: auto; border: 0; border-radius: 0; position: fixed; top: 58px; left: 0; right: 0; bottom: calc(52px + env(safe-area-inset-bottom)); z-index: 1; }
+    .crosshair { position: fixed; left: 50%; top: calc(50% + 3px); width: 34px; height: 34px; margin: -17px 0 0 -17px; z-index: 500; pointer-events: none; }
+    .crosshair::before, .crosshair::after { content: ''; position: absolute; background: #e53e3e; box-shadow: 0 0 0 1px #fff; }
+    .crosshair::before { left: 16px; top: 0; width: 2px; height: 34px; }
+    .crosshair::after { top: 16px; left: 0; height: 2px; width: 34px; }
+    .fab-row { position: fixed; left: 0; right: 0; bottom: calc(66px + env(safe-area-inset-bottom)); z-index: 600; display: flex; justify-content: center; gap: 10px; padding: 0 12px; pointer-events: none; }
+    .fab-row .btn { pointer-events: auto; box-shadow: 0 4px 14px rgba(0,0,0,.25); }
+    .side-fabs { position: fixed; right: 12px; top: 72px; z-index: 600; display: flex; flex-direction: column; gap: 8px; }
+    .side-fabs button { width: 46px; height: 46px; border-radius: 12px; border: 0; background: #fff; box-shadow: 0 2px 10px rgba(0,0,0,.25); font-size: 20px; cursor: pointer; }
+    .side-fabs button.on { background: var(--brand); color: #fff; }
+    .legend { position: fixed; left: 10px; top: 70px; z-index: 600; background: rgba(255,255,255,.94); border-radius: 10px; padding: 6px 9px; font-size: 12px; box-shadow: var(--shadow); line-height: 1.6; }
+    .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; vertical-align: -1px; }
+    .zoom-note { position: fixed; top: 70px; left: 50%; transform: translateX(-50%); z-index: 650; background: #1f2d27; color: #fff; padding: 6px 12px; border-radius: 999px; font-size: 13px; }
+    .sheet-back { position: fixed; inset: 0; background: rgba(0,0,0,.35); z-index: 2000; display: flex; align-items: flex-end; justify-content: center; }
+    .sheet { background: #fff; width: 100%; max-width: 760px; max-height: 92vh; overflow: auto; border-radius: 16px 16px 0 0; padding: 16px 16px calc(16px + env(safe-area-inset-bottom)); }
+    .sheet h2 { margin: 0 0 2px; font-size: 19px; }
+    .sheet .grab { width: 40px; height: 5px; border-radius: 3px; background: #cbd5e0; margin: -6px auto 10px; }
+    .outcomes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 12px 0; }
+    .outcomes button { border: 2px solid var(--line); background: #fff; border-radius: 12px; padding: 14px 6px; font: inherit; font-weight: 700; font-size: 15px; cursor: pointer; }
+    .outcomes button .e { display: block; font-size: 24px; margin-bottom: 2px; }
+    .outcomes button.on { border-color: var(--brand); background: var(--brand-soft); }
+    .outcomes .go { grid-column: span 3; background: var(--brand); color: #fff; border-color: var(--brand); }
+    .knock-log { font-size: 13px; color: var(--muted); margin: 6px 0 0; padding-left: 18px; }
+    .qline { display: grid; grid-template-columns: 1fr 120px 96px 36px; gap: 6px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line); }
+    .qline b { font-size: 15px; }
+    .qline input, .qline select { padding: 8px; }
+    .svc-chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 4px; }
+    .svc-chips button { border: 1px solid var(--line); background: #fff; border-radius: 999px; padding: 9px 14px; font: inherit; font-weight: 600; cursor: pointer; }
+    .svc-chips button.on { background: var(--brand-soft); border-color: var(--brand); color: var(--brand-dark); }
+    .qtotal { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 12px 0; text-align: center; }
+    .qtotal div { background: var(--brand-soft); border-radius: 10px; padding: 10px 6px; font-size: 13px; color: var(--brand-dark); }
+    .qtotal b { display: block; font-size: 22px; color: var(--ink); }
+    .deal-row { display: flex; gap: 10px; align-items: center; padding: 12px 14px; border-bottom: 1px solid var(--line); text-decoration: none; color: inherit; cursor: pointer; }
+    .deal-row:last-child { border-bottom: 0; }
+    .deal-row .info { flex: 1; min-width: 0; }
+    .you { background: var(--brand-soft); }
+    .rank { flex: 0 0 34px; height: 34px; border-radius: 50%; color: #fff; font-weight: 700; display: grid; place-items: center; }
+    @media (max-width: 520px) { .qline { grid-template-columns: 1fr 1fr 80px 32px; } .qline b { grid-column: 1 / -1; } .top .tally { gap: 8px; } }
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+  <script src="/nuvolve/app/vendor/leaflet/leaflet.js"></script>
+  <script src="/nuvolve/app/js/common.js"></script>
+  <script src="/nuvolve/app/js/sell.js"></script>
+</body>
+</html>

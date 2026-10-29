@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <script src="/nuvolve/app/demo-boot.js?v=mvto1yh6"></script>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#1f2d27">
+  <title>Termite graph</title>
+  <link rel="stylesheet" href="/nuvolve/app/css/styles.css">
+  <style>
+    body { background: #eef2f0; }
+    .gtop { background: #1f2d27; color: #fff; padding: 10px 14px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; position: sticky; top: 0; z-index: 10; }
+    .gtop a { color: #a8c3b4; text-decoration: none; }
+    .gtop input { background: rgba(255,255,255,.12); color: #fff; border: 1px solid rgba(255,255,255,.2); border-radius: 8px; padding: 6px 10px; font: inherit; font-weight: 600; min-width: 0; flex: 1 1 160px; }
+    .gtop .sub { color: #a8c3b4; font-size: 13px; }
+    .gtop .saved { margin-left: auto; font-size: 13px; color: #a8c3b4; }
+    .gwrap { padding: 10px; max-width: 1100px; margin: 0 auto; }
+    .tools { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+    .tools button { border: 1px solid var(--line); background: #fff; border-radius: 8px; padding: 7px 10px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; min-height: 38px; }
+    .tools button.on { background: var(--brand); color: #fff; border-color: var(--brand); }
+    .tools .mk { min-width: 38px; font-weight: 800; }
+    .tools .sep { width: 1px; background: var(--line); margin: 0 2px; }
+    .tools select { min-height: 38px; border-radius: 8px; border: 1px solid var(--line); font: inherit; font-size: 13px; padding: 0 6px; }
+    #canvas { background: #fff; border-radius: 10px; box-shadow: var(--shadow); touch-action: none; user-select: none; overflow: hidden; }
+    #canvas svg { display: block; cursor: crosshair; }
+    .hint-bar { font-size: 13px; color: var(--muted); margin: 6px 2px; min-height: 18px; }
+    .legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13px; margin-top: 10px; }
+    .legend span { display: inline-flex; align-items: center; gap: 4px; }
+    .glist a { display: flex; justify-content: space-between; padding: 12px; background: #fff; border-radius: 10px; margin-bottom: 8px; text-decoration: none; color: inherit; box-shadow: var(--shadow); }
+  </style>
+</head>
+<body>
+  <div id="app"><p class="muted" style="padding:20px">Loading...</p></div>
+  <script src="/nuvolve/app/js/common.js"></script>
+  <script src="/nuvolve/app/js/graph-svg.js"></script>
+  <script src="/nuvolve/app/js/graph.js"></script>
+</body>
+</html>
