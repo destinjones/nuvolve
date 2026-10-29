@@ -157,11 +157,13 @@ function sheet(html) {
   const back = document.createElement('div');
   back.className = 'sheet-back';
   back.innerHTML = `<div class="sheet" role="dialog" aria-modal="true"><div class="grab"></div>${html}</div>`;
-  const close = () => { back.remove(); window.removeEventListener('hashchange', close); };
+  const out = { el: back };
+  const close = () => { back.remove(); window.removeEventListener('hashchange', close); out.onClose?.(); };
   back.addEventListener('mousedown', (e) => { if (e.target === back) close(); });
   window.addEventListener('hashchange', close);
   document.body.appendChild(back);
-  return { el: back, close };
+  out.close = close;
+  return out;
 }
 
 async function openSpot(lat, lng) {
@@ -169,21 +171,33 @@ async function openSpot(lat, lng) {
   const door = near?.doors.sort((a, z) => Math.hypot(a.lat - lat, a.lng - lng) - Math.hypot(z.lat - lat, z.lng - lng))[0];
   if (door) return openDoor(door.id);
   doorSheet({ lat, lng, status: null, knocks: 0, knockLog: [] });
-  const a = await api(`/nuvolve/app/api/sales/reverse?lat=${lat}&lng=${lng}`).catch(() => null);
-  if (a?.address) {
-    const f = $('.sheet [name=address]');
-    if (f && !f.value) { f.value = a.address; $('.sheet [name=city]').value = a.city; $('.sheet [name=state]').value = a.state; $('.sheet [name=zip]').value = a.zip; }
-  }
 }
 
 async function openDoor(id) {
   doorSheet(await api(`/nuvolve/app/api/sales/doors/${id}`));
 }
 
+// The address under a pin: fills the empty address boxes in root.
+async function fillFromPin(root, lat, lng) {
+  const a = await api(`/nuvolve/app/api/sales/reverse?lat=${lat}&lng=${lng}`).catch(() => null);
+  const f = $('[name=address]', root);
+  if (f && !f.value && a?.address) for (const k of ['address', 'city', 'state', 'zip']) $(`[name=${k}]`, root).value = a[k] || '';
+  else if (f && !f.value) f.placeholder = 'Type the address';
+  return a;
+}
+
+// A pin where the rep tapped, while the door sheet is open.
+let pending = null;
+function pendingPin(lat, lng) {
+  if (pending) { pending.remove(); pending = null; }
+  if (map && lat != null) pending = L.marker([lat, lng], { keyboard: false, interactive: false }).addTo(map);
+}
+
 function doorSheet(d) {
   const blocked = d.status === 'do_not_knock';
   const dealMine = d.deal && !d.deal.theirs;
   const s = sheet(`
+    <div id="photo">${homePhoto(d)}</div>
     <h2>${d.id ? esc(d.address || 'This house') : 'New door'} ${d.status ? `<span class="pill" style="background:${OUTCOME[d.status].color};color:#fff">${OUTCOME[d.status].label}</span>` : ''}</h2>
     ${d.id ? `<div class="small muted">Knocked ${d.knocks} time${d.knocks === 1 ? '' : 's'}${d.last_rep ? ` · last by ${esc(d.last_rep)} ${ago(d.last_knock_at)}` : ''}${d.follow_up_at ? ` · come back ${when(d.follow_up_at)}` : ''}</div>` : ''}
     ${blocked ? '<div class="alert err" style="margin-top:10px"><span>⛔ They asked us not to knock. Skip this house.</span></div>' : ''}
@@ -191,7 +205,7 @@ function doorSheet(d) {
     ${dealMine ? `<div class="alert info" style="margin-top:10px"><span>Your deal: ${esc(d.deal.customer_name)} ${stagePill(d.deal.stage)}</span><a class="btn sm" href="#/deal/${d.deal.id}">Open</a></div>` : ''}
     ${d.notes ? `<p class="small" style="margin:8px 0 0">📝 ${esc(d.notes)}</p>` : ''}
     ${d.id ? '' : `<div class="row" style="grid-template-columns:2fr 1fr .6fr .8fr;margin-top:8px">
-      <div class="field"><label>Address</label><input name="address" autocomplete="off" placeholder="Finding the address..."></div>
+      <div class="field"><label>Address</label><input name="address" autocomplete="off" placeholder="Finding the address..." enterkeyhint="done"></div>
       <div class="field"><label>City</label><input name="city"></div><div class="field"><label>State</label><input name="state"></div><div class="field"><label>Zip</label><input name="zip" inputmode="numeric"></div></div>`}
     <div class="outcomes">
       ${['not_home', 'not_interested', 'come_back'].map((k) => `<button type="button" data-o="${k}" ${blocked ? 'disabled' : ''}><span class="e">${OUTCOME[k].e}</span>${OUTCOME[k].label}</button>`).join('')}
@@ -202,8 +216,31 @@ function doorSheet(d) {
     ${d.knockLog?.length ? `<details><summary class="small">History</summary><ul class="knock-log">${d.knockLog.map((k) => `<li>${ago(k.created_at)} · ${esc(OUTCOME[k.outcome]?.label || k.outcome)}${k.rep ? ` · ${esc(k.rep)}` : ''}${k.notes ? ` · ${esc(k.notes)}` : ''}</li>`).join('')}</ul></details>` : ''}
   `);
   const spot = () => (d.id ? { door_id: d.id } : { lat: d.lat, lng: d.lng, ...formData($('.row', s.el) || s.el) });
+  const showPhoto = () => { $('#photo', s.el).innerHTML = homePhoto({ ...d, address: $('[name=address]', s.el)?.value || d.address }); wireHomePhotos(s.el); };
+  wireHomePhotos(s.el);
+  // A new door: put the address of the tapped spot in the boxes, and let the rep type over it with suggestions.
+  // Picking a suggestion moves the pin to that house. An old door with no address gets one saved now.
+  let lookup = Promise.resolve();
+  if (!d.id) {
+    pendingPin(d.lat, d.lng);
+    s.onClose = () => pendingPin(null);
+    lookup = fillFromPin(s.el, d.lat, d.lng);
+    addressAutocomplete($('[name=address]', s.el), (a) => {
+      for (const k of ['city', 'state', 'zip']) $(`[name=${k}]`, s.el).value = a[k] || '';
+      if (a.lat != null) { d.lat = a.lat; d.lng = a.lng; pendingPin(d.lat, d.lng); showPhoto(); }
+    }, () => ({ lat: d.lat, lng: d.lng }));
+  } else if (!d.address && d.lat != null) {
+    api(`/nuvolve/app/api/sales/reverse?lat=${d.lat}&lng=${d.lng}`).then((a) => {
+      if (!a?.address || !s.el.isConnected) return;
+      $('h2', s.el).firstChild.textContent = `${a.address} `;
+      d.address = a.address;
+      api(`/nuvolve/app/api/sales/doors/${d.id}`, { method: 'PUT', body: { address: a.address, city: a.city, state: a.state, zip: a.zip } }).catch(() => {});
+    }).catch(() => {});
+  }
   const save = async (body) => {
     try {
+      // "Not home" can be tapped before the address comes back; wait for it so the door isn't saved without one.
+      await lookup;
       await api('/nuvolve/app/api/sales/knocks', { body: { ...spot(), ...body } });
       s.close();
       toast(`${OUTCOME[body.outcome].e} ${OUTCOME[body.outcome].label}`);
@@ -228,7 +265,8 @@ function doorSheet(d) {
       save({ outcome: o, notes: f.notes, follow_up_at: f.follow_up_at, lead: { first_name: f.first_name, phone: f.phone } });
     };
   }));
-  $('[data-quote]', s.el).onclick = () => {
+  $('[data-quote]', s.el).onclick = async () => {
+    await lookup;
     const q = d.id ? `door=${d.id}` : new URLSearchParams({ lat: d.lat, lng: d.lng, ...formData($('.row', s.el)) }).toString();
     s.close();
     location.hash = `#/quote?${dealMine ? `deal=${d.deal.id}&` : ''}${q}`;
@@ -249,6 +287,7 @@ async function showQuote(p) {
   const known = deal && deal.customer_name !== 'No name yet';
   app.innerHTML = `<div class="top"><button class="btn sm" id="back">← Back</button><h1>Quote${addr ? `<div class="sub">${esc(addr)}</div>` : ''}</h1></div>
     <div class="wrap">
+      ${homePhoto(door || (p.lat ? { lat: p.lat, lng: p.lng, address: addr } : deal))}
       <div class="card" id="who"><h2>Who are we protecting?</h2>
         ${known ? `<p><b>${esc(deal.customer_name)}</b>${deal.phone ? ` · ${esc(deal.phone)}` : ''}</p>` : `
         <div class="row"><div class="field"><label>First name</label><input name="first_name" autocomplete="off" required></div><div class="field"><label>Last name</label><input name="last_name" autocomplete="off"></div></div>
@@ -267,6 +306,7 @@ async function showQuote(p) {
       <p class="small muted" style="text-align:center;margin-top:10px">When they sign, their plan and first visit go on the schedule automatically.</p>
     </div>`;
   $('#back').onclick = () => history.back();
+  wireHomePhotos(app);
   const draw = () => {
     $('#lines').innerHTML = lines.map((l, i) => `<div class="qline"><b>${esc(l.name)}</b>
       <select data-f="${i}">${Object.entries(FREQ).map(([k, v]) => `<option value="${k}" ${k === l.frequency ? 'selected' : ''}>${v}</option>`).join('')}</select>
@@ -315,19 +355,21 @@ async function showLeads() {
   const [f, pipe] = await Promise.all([api('/nuvolve/app/api/sales/follow-ups'), api('/nuvolve/app/api/sales/pipeline?days=30')]);
   const due = f.doors.length + f.deals.length;
   const open = [...pipe.stages.quoted, ...pipe.stages.contacted, ...pipe.stages.new];
-  const row = (d) => `<a class="deal-row" href="#/deal/${d.id}"><div class="info"><b>${esc(d.customer_name)}</b> ${stagePill(d.stage)}
+  const thumb = (d) => (d.lat != null ? homePhoto(d, 120, 120, 'home-thumb') : '<div class="home-thumb none"></div>');
+  const row = (d) => `<a class="deal-row" href="#/deal/${d.id}">${thumb(d)}<div class="info"><b>${esc(d.customer_name)}</b> ${stagePill(d.stage)}
       <div class="small muted">${esc(d.address || '')}${d.next_step_at ? ` · ${esc(d.next_step || 'Follow up')} ${when(d.next_step_at)}` : ''}</div></div>
       <b class="nowrap">${money(d.value)}</b></a>`;
   app.innerHTML = `<div class="top"><h1>📋 My leads<div class="sub">${money(pipe.openValue)} open · ${pipe.totals.won.count} won in 30 days</div></h1></div>
     <div class="wrap">
       ${due ? `<div class="card flush"><div class="card-head" style="padding:12px 14px 0"><h2>Go back today</h2></div>
-        ${f.doors.map((d) => `<div class="deal-row" data-door="${d.id}" data-lat="${d.lat}" data-lng="${d.lng}"><div class="info"><b>${esc(d.address || 'House on the map')}</b>
+        ${f.doors.map((d) => `<div class="deal-row" data-door="${d.id}" data-lat="${d.lat}" data-lng="${d.lng}">${thumb(d)}<div class="info"><b>${esc(d.address || 'House on the map')}</b>
           <div class="small muted">🕒 ${when(d.follow_up_at)}${d.notes ? ` · ${esc(d.notes)}` : ''}</div></div><span class="btn sm">Map</span></div>`).join('')}
         ${f.deals.map(row).join('')}</div>` : ''}
       <div class="card flush"><div class="card-head" style="padding:12px 14px 0"><h2>Open deals</h2></div>
         ${open.length ? open.map(row).join('') : '<p class="muted" style="padding:0 14px 14px">No open deals yet. Go knock some doors!</p>'}</div>
       ${pipe.stages.won.length ? `<div class="card flush"><div class="card-head" style="padding:12px 14px 0"><h2>Won, last 30 days</h2></div>${pipe.stages.won.map(row).join('')}</div>` : ''}
     </div>${tabbar('leads', due)}`;
+  wireHomePhotos(app);
   $$('[data-door]').forEach((el) => (el.onclick = () => {
     follow = false;
     try { localStorage.setItem('nv_sell_view', JSON.stringify({ lat: Number(el.dataset.lat), lng: Number(el.dataset.lng), zoom: 19 })); } catch { /* private mode */ }
@@ -341,6 +383,7 @@ async function showDeal(id) {
   const canSign = e && ['sent', 'viewed'].includes(e.status);
   app.innerHTML = `<div class="top"><button class="btn sm" id="back">← Back</button><h1>${esc(d.customer_name)}<div class="sub">${esc(d.address || '')}</div></h1></div>
     <div class="wrap">
+      ${homePhoto(d.door || d)}
       <div class="card"><div class="card-head"><h2>${stagePill(d.stage)} ${money(d.value)} <span class="small muted">first year</span></h2></div>
         ${d.phone ? `<p><a class="btn" href="tel:${esc(d.phone)}">📞 Call</a> <a class="btn" href="sms:${esc(d.phone)}">💬 Text</a></p>` : ''}
         ${e ? `<p>Quote #${e.id}: <b>${money(e.perVisit)}</b>/visit · ${esc({ draft: 'Not sent yet', sent: 'Sent', viewed: 'They opened it', accepted: 'Signed', declined: 'Declined', expired: 'Expired' }[e.status] || e.status)}</p>` : '<p class="muted">No quote yet.</p>'}
@@ -360,6 +403,7 @@ async function showDeal(id) {
         <ul class="knock-log" style="margin-top:12px">${d.events.map((ev) => `<li>${ago(ev.created_at)} · ${esc(ev.text || ev.kind)}${ev.user_name ? ` · ${esc(ev.user_name)}` : ''}</li>`).join('')}</ul></div>
     </div>`;
   $('#back').onclick = () => (history.length > 1 ? history.back() : (location.hash = '#/leads'));
+  wireHomePhotos(app);
   $('#add-note').onclick = async () => { try { await api(`/nuvolve/app/api/sales/deals/${d.id}/notes`, { body: { text: $('#note').value } }); showDeal(id); } catch (err) { toast(err.message, true); } };
   if ($('#save-next')) $('#save-next').onclick = async () => { await api(`/nuvolve/app/api/sales/deals/${d.id}`, { method: 'PUT', body: formData($('#next')) }); toast('Saved'); };
   if ($('#lost')) $('#lost').onclick = () => modal('Lost this one?', '<div class="field"><label>Why?</label><input name="lost_reason" placeholder="Price, went with someone else, renter..."></div>', [

@@ -2,7 +2,7 @@
 // answers the app's API calls from answers the real server gave for a seeded demo company
 // (see demo/record.js). Logins pick which role's answers to use. Changes aren't saved.
 const APP = new URL('./', self.location).pathname.replace(/\/$/, ''); // e.g. /nuvolve/app
-const VERSION = 'mvto1yh6';
+const VERSION = 'mvtut2ml';
 const SESSION = 'nv-demo-session';
 const EMAILS = { 'owner@demo.com': 'owner', 'office@demo.com': 'office', 'manager@demo.com': 'manager', 'mike@demo.com': 'tech', 'sales@demo.com': 'sales' };
 const PASSWORD = 'demo1234';
@@ -85,6 +85,11 @@ async function api(req, url, p) {
     return json({ error: SAVED_MSG, demo: true }, 400);
   }
 
+  // The address under a map pin and address suggestions come live from OpenStreetMap, the way the server
+  // does it without a Google key, so the door-to-door app fills in real addresses anywhere.
+  if (p === '/api/sales/reverse') return json(await osmReverse(url.searchParams.get('lat'), url.searchParams.get('lng')));
+  if (p === '/api/address-suggest') return json(await osmSuggest(url.searchParams.get('q'), url.searchParams.get('lat'), url.searchParams.get('lng')));
+
   const who = await getRole();
   const loc = req.headers.get('X-Location') || '';
   const key = `GET ${p}${url.search}`;
@@ -142,4 +147,45 @@ function closest(m, p, url, loc) {
     if (score > bestScore) { best = m[k]; bestScore = score; }
   }
   return best;
+}
+
+const STATES = { alabama: 'AL', alaska: 'AK', arizona: 'AZ', arkansas: 'AR', california: 'CA', colorado: 'CO', connecticut: 'CT', delaware: 'DE', florida: 'FL', georgia: 'GA', hawaii: 'HI', idaho: 'ID', illinois: 'IL', indiana: 'IN', iowa: 'IA', kansas: 'KS', kentucky: 'KY', louisiana: 'LA', maine: 'ME', maryland: 'MD', massachusetts: 'MA', michigan: 'MI', minnesota: 'MN', mississippi: 'MS', missouri: 'MO', montana: 'MT', nebraska: 'NE', nevada: 'NV', 'new hampshire': 'NH', 'new jersey': 'NJ', 'new mexico': 'NM', 'new york': 'NY', 'north carolina': 'NC', 'north dakota': 'ND', ohio: 'OH', oklahoma: 'OK', oregon: 'OR', pennsylvania: 'PA', 'rhode island': 'RI', 'south carolina': 'SC', 'south dakota': 'SD', tennessee: 'TN', texas: 'TX', utah: 'UT', vermont: 'VT', virginia: 'VA', washington: 'WA', 'west virginia': 'WV', wisconsin: 'WI', wyoming: 'WY', 'district of columbia': 'DC' };
+const stateCode = (s) => STATES[String(s || '').toLowerCase()] || s || '';
+const okNum = (v, max) => { const n = Number(v); return v !== null && v !== '' && Number.isFinite(n) && Math.abs(n) <= max ? n : null; };
+async function getJson(u) {
+  const r = await fetch(u, { signal: AbortSignal.timeout(6000) });
+  if (!r.ok) throw new Error(r.status);
+  return r.json();
+}
+async function osmReverse(lat, lng) {
+  lat = okNum(lat, 90); lng = okNum(lng, 180);
+  if (lat == null || lng == null) return null;
+  try {
+    const a = (await getJson(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&addressdetails=1&zoom=18&lat=${lat}&lon=${lng}`)).address;
+    if (a && (a.road || a.house_number)) {
+      return { address: [a.house_number, a.road].filter(Boolean).join(' '), city: a.city || a.town || a.village || a.hamlet || a.suburb || a.county || '',
+        state: stateCode(a.state), zip: (a.postcode || '').slice(0, 10) };
+    }
+  } catch { /* try Photon */ }
+  try {
+    const p = (await getJson(`https://photon.komoot.io/reverse?lat=${lat}&lon=${lng}&limit=1&lang=en`)).features?.[0]?.properties;
+    return p ? { address: [p.housenumber, p.street || p.name].filter(Boolean).join(' '), city: p.city || p.town || p.village || p.county || '', state: stateCode(p.state), zip: p.postcode || '' } : null;
+  } catch { return null; }
+}
+async function osmSuggest(q, lat, lng) {
+  q = String(q || '').trim().slice(0, 200);
+  if (q.length < 4) return [];
+  lat = okNum(lat, 90); lng = okNum(lng, 180);
+  // Without the rep's spot, look around the demo company in Richardson, TX.
+  if (lat == null || lng == null) { lat = 32.9483; lng = -96.7299; }
+  try {
+    const d = await getJson(`https://photon.komoot.io/api/?limit=6&lang=en&q=${encodeURIComponent(q)}&lat=${lat}&lon=${lng}`);
+    return (d.features || []).filter((f) => f.properties.countrycode === 'US' && (f.properties.housenumber || f.properties.street)).map((f) => {
+      const p = f.properties;
+      const address = [p.housenumber, p.street || p.name].filter(Boolean).join(' ');
+      const state = stateCode(p.state);
+      return { address, city: p.city || p.town || p.village || p.county || '', state, zip: p.postcode || '',
+        lat: f.geometry.coordinates[1], lng: f.geometry.coordinates[0], label: [address, p.city || p.town || p.village, state, p.postcode].filter(Boolean).join(', ') };
+    });
+  } catch { return []; }
 }
