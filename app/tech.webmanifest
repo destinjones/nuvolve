@@ -10,8 +10,10 @@
   "background_color": "#eef2f0",
   "theme_color": "#1f2d27",
   "icons": [
-    { "src": "/nuvolve/app/icons/tech-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
-    { "src": "/nuvolve/app/icons/tech-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/nuvolve/app/icons/nuvolve-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/nuvolve/app/icons/nuvolve-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/nuvolve/app/icons/tech-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "/nuvolve/app/icons/tech-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
     { "src": "/nuvolve/app/icons/tech.svg", "sizes": "any", "type": "image/svg+xml" }
   ]
 }

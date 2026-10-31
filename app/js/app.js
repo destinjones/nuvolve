@@ -12,7 +12,7 @@ const serviceOptions = (selected) =>
 const ROLE_LABEL = { owner: 'Owner', admin: 'Admin', manager: 'Branch manager', office: 'Office rep', tech: 'Technician', sales: 'Sales rep' };
 const multiBranch = () => (BOOT.locations || []).length > 1;
 const branchName = (id) => BOOT.locations?.find((l) => l.id === Number(id))?.name || '';
-const LOGO = '<svg viewBox="0 0 32 32" width="30" height="30" aria-hidden="true"><rect width="32" height="32" rx="8" fill="#2f855a"/><path d="M9 23V9l14 14V9" stroke="#fff" stroke-width="3.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const LOGO = '<svg viewBox="0 0 512 512" width="32" height="32" aria-hidden="true"><defs><linearGradient id="nvlogo" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#38a169"/><stop offset="1" stop-color="#22543d"/></linearGradient></defs><path d="M256 36 L436 98 V238 C436 356 360 434 256 476 C152 434 76 356 76 238 V98 Z" fill="url(#nvlogo)"/><path d="M178 344 V172 L334 336 V164" fill="none" stroke="#fff" stroke-width="42" stroke-linecap="round" stroke-linejoin="round"/><circle cx="178" cy="344" r="30" fill="#7ee2a8" stroke="#1f2d27" stroke-width="12"/><circle cx="334" cy="164" r="30" fill="#7ee2a8" stroke="#1f2d27" stroke-width="12"/></svg>';
 const freqOptions = (selected = 'quarterly') =>
   Object.entries(FREQ).map(([k, v]) => `<option value="${k}" ${k === selected ? 'selected' : ''}>${v}</option>`).join('');
 const custName = (c) => c.name || [c.first_name, c.last_name].filter(Boolean).join(' ') || c.customer_name || c.company || 'Customer';
