@@ -220,6 +220,7 @@ async function dealModal(id, reps, done) {
   const e = d.estimate;
   const open = ['new', 'contacted', 'quoted'].includes(d.stage);
   const m = modal(d.customer_name, `
+    ${homePhoto(d.door || d, 640, 260)}
     <div class="small muted">${esc(d.address || '')}${d.phone ? ` · <a href="tel:${esc(d.phone)}">${esc(d.phone)}</a>` : ''}${d.email ? ` · ${esc(d.email)}` : ''} · ${DEAL_SOURCE[d.source] || ''} · added ${fmtDate(d.created_at)}</div>
     <div class="row" style="margin-top:10px">
       <div class="field"><label>Stage</label><select name="stage">${DEAL_STAGES.map(([k, l]) => `<option value="${k}" ${k === d.stage ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
@@ -247,6 +248,7 @@ async function dealModal(id, reps, done) {
       if (stage !== d.stage) { moveDeal(d, stage, done); return; }
       done();
     } }]);
+  wireHomePhotos(m.el);
   if ($('#dm-copy', m.el)) $('#dm-copy', m.el).onclick = () => copyText(d.link, 'Link copied');
   if ($('#dm-quote', m.el)) $('#dm-quote', m.el).onclick = async () => { m.close(); estimateModal(await api(`/nuvolve/app/api/customers/${d.customer_id}`), done); };
 }

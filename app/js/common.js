@@ -477,6 +477,62 @@ function housePhoto(p, w = 720, h = 360) {
   return `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/export?bbox=${p.lng - dLng},${p.lat - dLat},${p.lng + dLng},${p.lat + dLat}&bboxSR=4326&imageSR=3857&size=${w},${h}&format=jpg&f=image`;
 }
 
+// Photo of a home for the door-to-door app and the sales board: Street View when the server has a Google key
+// and Google has a picture there, otherwise the aerial photo. Call wireHomePhotos(root) after it's on the page.
+function homePhoto(p, w = 640, h = 360, cls = 'home-photo') {
+  if (p?.lat == null || p?.lng == null || p.lat === '' || p.lng === '') return '';
+  const sv = typeof BOOT !== 'undefined' && BOOT?.streetView;
+  const src = sv ? `/nuvolve/app/api/sales/street-view?lat=${p.lat}&lng=${p.lng}&w=${w}&h=${h}` : housePhoto(p, w, h);
+  const big = cls === 'home-photo';
+  return `<div class="${cls}"><img src="${src}" data-aerial="${esc(housePhoto(p, w, h))}" alt="${esc(p.address ? `Photo of ${p.address}` : 'Photo of the house')}" loading="lazy">
+    ${big ? `<span class="tag">${sv ? 'Street View' : 'Aerial'}</span><a class="sv" href="https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${p.lat},${p.lng}" target="_blank" rel="noopener">Street View ↗</a>` : ''}</div>`;
+}
+function wireHomePhotos(root = document) {
+  $$('.home-photo img, .home-thumb img', root).forEach((img) => (img.onerror = () => {
+    if (img.dataset.aerial && img.src !== img.dataset.aerial && !img.dataset.fell) {
+      img.dataset.fell = 1;
+      img.src = img.dataset.aerial;
+      const tag = img.parentNode.querySelector('.tag');
+      if (tag) tag.textContent = 'Aerial';
+    } else img.parentNode.classList.add('none');
+  }));
+}
+
+// Address type-ahead: fills street, city, state, zip, and map pin from one box.
+// near() gives a spot to look around (the rep's pin); without it the server looks around the shop.
+function addressAutocomplete(input, onPick, near) {
+  const wrap = document.createElement('div');
+  wrap.className = 'search-results hidden';
+  input.parentNode.style.position = 'relative';
+  input.parentNode.appendChild(wrap);
+  input.setAttribute('autocomplete', 'off');
+  let t, seq = 0;
+  input.addEventListener('input', () => {
+    clearTimeout(t);
+    t = setTimeout(async () => {
+      const q = input.value.trim();
+      if (q.length < 4) return wrap.classList.add('hidden');
+      const n = ++seq;
+      const at = near?.();
+      const list = await api(`/nuvolve/app/api/address-suggest?q=${encodeURIComponent(q)}${at?.lat != null ? `&lat=${at.lat}&lng=${at.lng}` : ''}`).catch(() => []);
+      if (n !== seq) return;
+      if (!list?.length) return wrap.classList.add('hidden');
+      wrap.innerHTML = list.map((a, i) => `<a href="javascript:void 0" data-i="${i}">📍 ${esc(a.label)}</a>`).join('');
+      wrap.classList.remove('hidden');
+      $$('a', wrap).forEach((a) => (a.onmousedown = async (e) => {
+        e.preventDefault();
+        let pick = list[Number(a.dataset.i)];
+        wrap.classList.add('hidden');
+        // Google suggestions carry only a place id; look up the rest.
+        if (pick.place_id) pick = await api(`/nuvolve/app/api/address-place?id=${encodeURIComponent(pick.place_id)}`).catch(() => null) || { address: pick.label.split(',')[0] };
+        input.value = pick.address || input.value;
+        onPick(pick);
+      }));
+    }, 300);
+  });
+  input.addEventListener('blur', () => setTimeout(() => wrap.classList.add('hidden'), 200));
+}
+
 
 // Print buttons (no inline handlers, so the strict content security policy can stay on).
 document.addEventListener('click', (e) => { if (e.target.closest?.('[data-print]')) window.print(); });
