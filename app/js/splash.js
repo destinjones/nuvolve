@@ -23,12 +23,14 @@
   css.textContent = `
 #nv-splash{position:fixed;inset:0;z-index:2147483000;display:grid;place-items:center;background:#0f1a16;transition:opacity .35s ease;cursor:pointer}
 #nv-splash.out{opacity:0;pointer-events:none}
-#nv-splash .nv-box{position:relative;width:min(300px,62vmin);aspect-ratio:1}
+#nv-splash .nv-box{position:relative;width:min(360px,70vmin);aspect-ratio:1}
 #nv-splash svg,#nv-splash video{position:absolute;inset:0;width:100%;height:100%}
 #nv-splash svg{padding:21%;opacity:0;animation:nvIn .3s ease .05s forwards}
-#nv-splash video{opacity:0;transition:opacity .15s;-webkit-mask-image:radial-gradient(circle,#000 58%,transparent 71%);mask-image:radial-gradient(circle,#000 58%,transparent 71%)}
+#nv-splash video{opacity:0;transition:opacity .15s;-webkit-mask-image:radial-gradient(circle,#000 60%,transparent 71%);mask-image:radial-gradient(circle,#000 60%,transparent 71%)}
 #nv-splash.playing video{opacity:1} #nv-splash.playing svg{display:none}
-#nv-splash .nv-word{position:absolute;left:0;right:0;bottom:-6%;text-align:center;font:800 15px/1 system-ui,sans-serif;letter-spacing:.34em;color:#e6efe9;opacity:0;animation:nvIn .4s ease .9s forwards}
+#nv-splash .nv-word{position:absolute;left:0;right:0;bottom:-6%;text-align:center;font:600 13px/1 ui-monospace,Menlo,Consolas,monospace;letter-spacing:.5em;text-indent:.5em;color:#a8e8c4;opacity:0;transform:translateY(6px)}
+#nv-splash.playing .nv-word{animation:nvWord .5s cubic-bezier(.2,.8,.2,1) 1.2s forwards}
+@keyframes nvWord{to{opacity:1;transform:none}}
 @keyframes nvIn{to{opacity:1}}`;
   document.head.appendChild(css);
 
@@ -52,8 +54,8 @@
   const v = document.createElement('video');
   v.muted = true; v.playsInline = true; v.preload = 'auto';
   v.setAttribute('muted', ''); v.setAttribute('playsinline', '');
-  const webm = document.createElement('source'); webm.src = asset('nuvolve-intro.webm'); webm.type = 'video/webm';
-  const mp4 = document.createElement('source'); mp4.src = asset('nuvolve-intro.mp4'); mp4.type = 'video/mp4';
+  const webm = document.createElement('source'); webm.src = asset('nuvolve-splash.webm'); webm.type = 'video/webm';
+  const mp4 = document.createElement('source'); mp4.src = asset('nuvolve-splash.mp4'); mp4.type = 'video/mp4';
   v.append(webm, mp4);
 
   const giveUp = setTimeout(() => { v.removeAttribute('src'); v.innerHTML = ''; v.load(); setTimeout(finish, STILL_MS); }, WAIT_MS);
