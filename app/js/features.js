@@ -4287,7 +4287,7 @@ try { (function () {
 // toast, a modal, a card that loads late), before the browser paints it. Dates follow the language too.
 // Text that shouldn't be touched can sit inside [data-nv-raw]. Also adds the English / Español switch.
 (function () {
-  const page = /^\/portal(\/|$)/.test(location.pathname) ? 'portal' : /^\/book(\/|$)/.test(location.pathname) ? 'book' : null;
+  const page = /^\/nuvolve\/app\/portal(\/|$)/.test(location.pathname) ? 'portal' : /^\/nuvolve\/app\/book(\/|$)/.test(location.pathname) ? 'book' : null;
   if (!page) return;
 
   // Lines with a changing part. Each is a catalog key; {name} catches whatever is there. `where` limits a loose
@@ -4583,9 +4583,9 @@ try { (function () {
       let o;
       try { o = await api(`/nuvolve/app/api/book/${key}/openings`, { body: { address: b.address, city: b.city, zip: b.zip, service_type_id: b.service_type_id } }); } catch { return; }
       if (mine !== seq) return;
-      if (o.outOfArea) return say(t("That address is outside the area we book online. Send your request and we'll call you."));
-      if (o.requestOnly || o.mode === 'off') return say(t("Send your request and we'll call you to pick a time."));
-      if (!o.days.length) return say(t("No open times online right now. Send your request and we'll call you."));
+      if (o?.outOfArea) return say(t("That address is outside the area we book online. Send your request and we'll call you."));
+      if (o?.requestOnly || o?.mode === 'off') return say(t("Send your request and we'll call you to pick a time."));
+      if (!o?.days?.length) return say(t("No open times online right now. Send your request and we'll call you."));
       box.hidden = false;
       if (pref) pref.hidden = true;
       note.textContent = o.mode === 'confirm' ? t("We'll confirm your time by text or email.") : '';
@@ -4620,10 +4620,10 @@ try { (function () {
   async function openMove(visit, token, reload, fallback) {
     let o;
     try { o = await api(`/nuvolve/app/api/portal/${token}/openings?visit_id=${visit.id}`); } catch { return fallback(); }
-    if (o.mode === 'off') return fallback();
+    if (!o || o.mode === 'off') return fallback();
     if (o.waiting) return toast(t('We are still confirming your last change. We will be in touch soon.'));
     // Nothing open online (or moved a few times already): the old way, tell us a better day.
-    if (!o.days.length) return fallback();
+    if (!o.days?.length) return fallback();
     let chosen = null;
     const m = modal(t('Change your service day'), `<p>${esc(t('Your visit is on {date}.', { date: `${dayLabel(visit.date, true)}${visit.time_window ? `, ${visit.time_window}` : ''}` }))}
       ${esc(t('Pick a new time:'))}</p><div id="ss-move"></div>

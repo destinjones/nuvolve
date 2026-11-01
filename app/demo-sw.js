@@ -1121,6 +1121,8 @@
   // Answered the way their screens expect, so nothing breaks; the page then says the change isn't kept.
   const SHAPES = [
     [/^\/api\/(notifications\/read|me\/location)$/, () => ({ ok: true }), true],
+    // The portal's English / Español switch: the page remembers it in this browser.
+    [/^\/api\/portal\/[^/]+\/lang$/, () => ({ ok: true }), true],
     [/^\/api\/customers\/\d+\/remind$/, () => ({ status: 'sent' })],
     [/^\/api\/reminders\/run$/, () => ({ sent: 0 })],
     [/^\/api\/routes\/reshuffle$/, () => ({ moved: 0, crews: [], stuck: [], applied: false, texted: 0 })],
@@ -1157,9 +1159,9 @@
 // (see demo/record.js). Logins pick which role's answers to use. What a visitor adds or changes is kept
 // in this browser by the overlay (demo/overlay.js, joined in front of this file) and laid over the answers.
 const APP = new URL('./', self.location).pathname.replace(/\/$/, ''); // e.g. /nuvolve/app
-const VERSION = 'mvx6nim0';
+const VERSION = 'mvx82xj4';
 const TODAY = '2026-10-31'; // the demo company's "today": the day it was recorded
-const DATA = '2026-11-01T02:00:21.125Z'; // when it was recorded; a new recording starts every browser's changes over
+const DATA = '2026-11-01T02:40:02.145Z'; // when it was recorded; a new recording starts every browser's changes over
 const O = self.DemoOverlay;
 const SESSION = 'nv-demo-session';
 const EMAILS = { 'owner@demo.com': 'owner', 'office@demo.com': 'office', 'manager@demo.com': 'manager', 'mike@demo.com': 'tech', 'sales@demo.com': 'sales' };
@@ -1167,7 +1169,7 @@ const PASSWORD = 'demo1234';
 const SHELLS = [[/^\/portal(\/|$)/, 'portal.html'], [/^\/review\//, 'review.html'], [/^\/tech\/?$/, 'tech.html'], [/^\/sell\/?$/, 'sell.html'],
   [/^\/developers\/?$/, 'developers.html'], [/^\/sign\//, 'sign.html'], [/^\/offer\//, 'offer.html'], [/^\/track\//, 'track.html'], [/^\/book\//, 'book.html']];
 // Anyone can open these without logging in, the way customers do.
-const PUBLIC = /^\/api\/(portal|sign|review|book|offer|track|setup-status|v1\/openapi\.json)/;
+const PUBLIC = /^\/api\/(portal|sign|review|book|offer|track|setup-status|i18n\/|v1\/openapi\.json)/;
 // The browser's clock moved to the demo company's day, the same way demo-boot.js moves the pages' clock.
 const OFF = (() => {
   const [y, m, d] = TODAY.split('-').map(Number);
@@ -1391,6 +1393,18 @@ async function planned(p, b) {
   return json(plan, m[pick].s);
 }
 
+// The booking form's open times: the recorder kept what the company had open for each service, at an
+// address it serves. Every address typed here gets those times; booking one sends a request.
+const OPENINGS = /^\/api\/book\/[^/]+\/openings$/;
+function openKey(p, b) { return `POST ${p} #${Number(b.service_type_id) || ''}`; } // keep in step with openKey in demo/record.js
+async function openTimes(req, p) {
+  const b = await req.clone().json().catch(() => ({}));
+  if (!String(b.address || '').trim() || !String(b.zip || '').trim()) return json({ error: 'Add the service address and zip first' }, 400);
+  const m = await data('public');
+  const hit = m[openKey(p, b)] || m[openKey(p, {})];
+  return hit ? replay(hit) : json({ mode: 'off', days: [] });
+}
+
 function json(body, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
 }
@@ -1431,6 +1445,7 @@ async function api(req, url, p, e) {
         if (hit) return hit;
       }
     }
+    if (OPENINGS.test(p)) return openTimes(req, p);
     if (!who && !PUBLIC.test(p)) return json({ error: 'Please log in' }, 401);
     // "Optimize" keeps the stops where they are in the demo and shows the route as it stands.
     if (p === '/api/routes/optimize') {
@@ -1446,6 +1461,8 @@ async function api(req, url, p, e) {
   // does it without a Google key, so the door-to-door app fills in real addresses anywhere.
   if (p === '/api/sales/reverse') return json(await osmReverse(url.searchParams.get('lat'), url.searchParams.get('lng')));
   if (p === '/api/address-suggest') return json(await osmSuggest(url.searchParams.get('q'), url.searchParams.get('lat'), url.searchParams.get('lng')));
+  // A visit moved to a picked time isn't kept in the demo, so the portal asks for a better day instead.
+  if (/^\/api\/portal\/[^/]+\/openings$/.test(p)) return json({ mode: 'off', days: [] });
   return read(url, p, who, loc);
 }
 
