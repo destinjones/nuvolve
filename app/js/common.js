@@ -66,17 +66,20 @@ function addDays(s, n) {
   d.setDate(d.getDate() + n);
   return ymd(d);
 }
+// Dates in the page's language: Spanish once a customer or tech page has switched to it (NV.useLang).
+const dateLocale = () => (window.NV?.lang === 'es' ? 'es-US' : 'en-US');
 function fmtDate(s, opts) {
   if (!s) return '';
-  return parseYmd(s.slice(0, 10)).toLocaleDateString('en-US', opts || { month: 'short', day: 'numeric', year: 'numeric' });
+  return parseYmd(s.slice(0, 10)).toLocaleDateString(dateLocale(), opts || { month: 'short', day: 'numeric', year: 'numeric' });
 }
 function fmtDay(s) {
   if (!s) return '';
   const t = todayStr();
-  if (s === t) return 'Today';
-  if (s === addDays(t, 1)) return 'Tomorrow';
-  if (s === addDays(t, -1)) return 'Yesterday';
-  return parseYmd(s).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+  const word = (w) => (window.NV ? NV.t(w) : w);
+  if (s === t) return word('Today');
+  if (s === addDays(t, 1)) return word('Tomorrow');
+  if (s === addDays(t, -1)) return word('Yesterday');
+  return parseYmd(s).toLocaleDateString(dateLocale(), { weekday: 'short', month: 'short', day: 'numeric' });
 }
 const FREQ = { one_time: 'One time', monthly: 'Monthly', bimonthly: 'Every 2 months', quarterly: 'Quarterly', yearly: 'Yearly' };
 
@@ -84,7 +87,8 @@ function toast(msg, isErr) {
   if (!msg) return;
   const el = document.createElement('div');
   el.className = 'toast' + (isErr ? ' err' : '');
-  el.textContent = msg;
+  // In the page's language: a server error (toast(e.message)) shows in Spanish on a Spanish page.
+  el.textContent = window.NV ? NV.t(String(msg)) : msg;
   document.body.appendChild(el);
   setTimeout(() => el.remove(), isErr ? 5000 : 2800);
 }
@@ -175,11 +179,12 @@ async function logIn(body) {
   const r = await api('/nuvolve/app/api/login', { body });
   if (!r.twoFactor) return r;
   return new Promise((resolve, reject) => {
-    const m = modal('Enter your code', `<p>Open your authenticator app and type the 6-digit code for Nuvolve.</p>
+    // The tech app logs in here too, so it's in the phone's language (NV.t is English in the office).
+    const m = modal(NV.t('Enter your code'), `<p>${esc(NV.t('Open your authenticator app and type the 6-digit code for Nuvolve.'))}</p>
       <div class="field"><input name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="9" placeholder="123 456" style="font-size:22px;letter-spacing:4px;text-align:center"></div>
-      <p class="small muted">Lost your phone? Type one of your backup codes instead, or ask your owner to reset two-factor for you.</p>`,
-    [{ label: 'Cancel', onClick: () => reject(Object.assign(new Error(''), { quiet: true })) },
-      { label: 'Log in', cls: 'primary', onClick: async (el) => { resolve(await api('/nuvolve/app/api/login', { body: { ...body, code: $('[name=code]', el).value } })); } }]);
+      <p class="small muted">${esc(NV.t('Lost your phone? Type one of your backup codes instead, or ask your owner to reset two-factor for you.'))}</p>`,
+    [{ label: NV.t('Cancel'), onClick: () => reject(Object.assign(new Error(''), { quiet: true })) },
+      { label: NV.t('Log in'), cls: 'primary', onClick: async (el) => { resolve(await api('/nuvolve/app/api/login', { body: { ...body, code: $('[name=code]', el).value } })); } }]);
     $('[name=code]', m.el).addEventListener('keydown', (e) => { if (e.key === 'Enter') $('.mf .primary', m.el).click(); });
   });
 }
@@ -203,7 +208,7 @@ const PHOTO_KIND = { before: 'Before', after: 'After', issue: 'Problem found', p
 // `src(id)` builds the picture URL (the office and techs use their login; the pay page uses its link).
 function photoStrip(root, visitId, photos, { canAdd = false, canDelete = () => false, src = (id) => `/nuvolve/app/api/photos/${id}` } = {}) {
   const draw = () => {
-    root.innerHTML = `<div class="photos">${photos.map((p) => `<figure class="ph">${p.local ? `<img src="${esc(p.local)}" alt="${esc(PHOTO_KIND[p.kind] || 'Photo')}">`
+    root.innerHTML = `<div class="photos">${photos.map((p) => `<figure class="ph" data-kind="${esc(p.kind)}">${p.local ? `<img src="${esc(p.local)}" alt="${esc(PHOTO_KIND[p.kind] || 'Photo')}">`
       : `<a href="${src(p.id)}" target="_blank" rel="noopener"><img src="${src(p.id)}" alt="${esc(PHOTO_KIND[p.kind] || 'Photo')}" loading="lazy"></a>`}
       <figcaption><span class="pill ${p.kind === 'issue' ? 'yellow' : ''}">${esc(PHOTO_KIND[p.kind] || 'Photo')}</span> ${p.local ? '⏳ ' : ''}${esc(p.caption || '')}</figcaption>
       ${canDelete(p) ? `<button type="button" class="ph-x" data-del="${p.id}" aria-label="Remove photo">✕</button>` : ''}</figure>`).join('')}</div>
@@ -215,7 +220,9 @@ function photoStrip(root, visitId, photos, { canAdd = false, canDelete = () => f
         try {
           const caption = kind === 'issue' ? (prompt('What did you find? (the customer sees this)', '') || '') : '';
           const data = await shrinkImage(f);
-          const r = await saveOrQueue(`/nuvolve/app/api/visits/${visitId}/photos`, { data, kind, caption }, { kind: 'photo', visitId: Number(visitId) });
+          // Feature modules can send more with the picture, like when and where it was taken (NV.collector('photo')).
+          const extra = typeof NV !== 'undefined' ? NV.collect('photo', root, { visitId, kind, file: f }) : {};
+          const r = await saveOrQueue(`/nuvolve/app/api/visits/${visitId}/photos`, { ...extra, data, kind, caption }, { kind: 'photo', visitId: Number(visitId) });
           // No signal: show it now from the phone. It uploads with the rest of the saved work.
           photos = r.queued ? [...photos, { id: `q${r.outboxId}`, queued: r.outboxId, kind, caption, local: data, user_id: typeof ME !== 'undefined' && ME ? ME.id : null }] : r.photos;
           draw();
@@ -244,7 +251,7 @@ function ticketForm(root, visit, products, onDone) {
   const productOptions = products.map((p) => `<option value="${p.id}" data-unit="${esc(p.unit)}" data-rate="${esc(p.default_rate || '')}">${esc(p.name)}${p.epa_reg ? ` (EPA ${esc(p.epa_reg)})` : ''}</option>`).join('');
   const last = visit.last_ticket;
   root.innerHTML = `
-    ${last ? `<div class="alert info last-time"><div><b>Same as last time?</b><div class="small">${fmtDate(last.date)} · ${esc(last.service_name || '')}${last.products.length ? ` · ${last.products.length} product${last.products.length > 1 ? 's' : ''}` : ''}</div></div>
+    ${last ? `<div class="alert info last-time"><div><b>Same as last time?</b><div class="small">${fmtDate(last.date)} · ${esc(last.service_name || '')}${last.products.length ? ` · ${esc(NV.t(last.products.length > 1 ? '{n} products' : '{n} product', { n: last.products.length }))}` : ''}</div></div>
       <button type="button" class="btn primary" id="use-last">Fill in from last visit</button></div>` : ''}
     <div class="field">
       <label>What pests did you treat for?</label>
@@ -282,6 +289,7 @@ function ticketForm(root, visit, products, onDone) {
     <div class="field">
       <label class="check"><input type="checkbox" id="present"> Customer was home</label>
     </div>
+    <div id="nv-ticket-extra">${typeof NV !== 'undefined' ? NV.slots('ticket.fields', { visit }) : ''}</div>
     <div class="field">
       <label>Photos</label>
       <div id="t-photos"></div>
@@ -345,6 +353,7 @@ function ticketForm(root, visit, products, onDone) {
   photoStrip($('#t-photos', root), visit.id, visit.photos || [], { canAdd: true, canDelete: (p) => typeof ME === 'undefined' || !ME || p.user_id === ME.id });
   const sig = signaturePad($('#sig', root));
   $('#sig-clear', root).onclick = () => sig.clear();
+  if (typeof NV !== 'undefined') NV.emit('ticket.rendered', { root, visit, signature: sig });
 
   // Stations, traps and monitors: everything starts as "no activity" so the tech only taps the exceptions.
   let devices = (visit.devices || []).map((d) => ({ ...d, status: d.status || 'ok', count: d.count || '' }));
@@ -390,6 +399,8 @@ function ticketForm(root, visit, products, onDone) {
     internal_notes: $('#inotes', root).value,
     price: $('#price', root).value,
     customer_present: $('#present', root).checked,
+    // Fields that feature modules add to the ticket (NV.slot('ticket.fields') + NV.collector('ticket')).
+    ...(typeof NV !== 'undefined' ? NV.collect('ticket', root, { visit }) : {}),
   });
 
   // What the tech types is kept on the phone until the stop is saved, so a dead zone or a closed tab loses nothing.
@@ -406,6 +417,7 @@ function ticketForm(root, visit, products, onDone) {
     $('#present', root).checked = Boolean(draft.customer_present);
     for (const ck of draft.device_checks || []) { const d = devices.find((x) => x.id === ck.device_id); if (d) Object.assign(d, { status: ck.status, count: ck.count || '' }); }
     drawDevices();
+    if (typeof NV !== 'undefined') NV.emit('ticket.draft', { root, visit, draft });
     root.insertAdjacentHTML('afterbegin', '<div class="alert ok small">Picked up where you left off. Nothing you typed was lost.</div>');
   }
   let saveTimer;
@@ -420,6 +432,9 @@ function ticketForm(root, visit, products, onDone) {
     // Pesticide records need the amount used, so a product without one can't be saved.
     const missing = body.products.find((p) => !(Number(p.amount) > 0));
     if (missing) return toast(`Enter how much ${products.find((x) => x.id === missing.product_id)?.name || 'product'} you used`, true);
+    // Feature checks (a required photo or signature, a restricted product's lot number) can stop the save.
+    const problem = typeof NV !== 'undefined' && NV.problem('ticket', { ...body, signature: sig.value() }, { visit, root });
+    if (problem) return toast(problem, true);
     btn.disabled = true;
     btn.textContent = 'Saving...';
     store.set(body);
@@ -427,6 +442,7 @@ function ticketForm(root, visit, products, onDone) {
       const result = await saveOrQueue(`/nuvolve/app/api/visits/${visit.id}/complete`, { ...body, signature: sig.value(), completed_at: new Date().toISOString() }, { kind: 'complete', visitId: visit.id });
       clearTimeout(saveTimer);
       store.clear();
+      if (typeof NV !== 'undefined') NV.emit('ticket.saved', { visit, result });
       onDone(result);
     } catch (err) {
       // fetch throws a TypeError (no status) when there's no signal.
@@ -475,6 +491,62 @@ function housePhoto(p, w = 720, h = 360) {
   const dLat = 0.00042;
   const dLng = (dLat * (w / h)) / Math.cos((p.lat * Math.PI) / 180);
   return `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/export?bbox=${p.lng - dLng},${p.lat - dLat},${p.lng + dLng},${p.lat + dLat}&bboxSR=4326&imageSR=3857&size=${w},${h}&format=jpg&f=image`;
+}
+
+// Photo of a home for the door-to-door app and the sales board: Street View when the server has a Google key
+// and Google has a picture there, otherwise the aerial photo. Call wireHomePhotos(root) after it's on the page.
+function homePhoto(p, w = 640, h = 360, cls = 'home-photo') {
+  if (p?.lat == null || p?.lng == null || p.lat === '' || p.lng === '') return '';
+  const sv = typeof BOOT !== 'undefined' && BOOT?.streetView;
+  const src = sv ? `/nuvolve/app/api/sales/street-view?lat=${p.lat}&lng=${p.lng}&w=${w}&h=${h}` : housePhoto(p, w, h);
+  const big = cls === 'home-photo';
+  return `<div class="${cls}"><img src="${src}" data-aerial="${esc(housePhoto(p, w, h))}" alt="${esc(p.address ? `Photo of ${p.address}` : 'Photo of the house')}" loading="lazy">
+    ${big ? `<span class="tag">${sv ? 'Street View' : 'Aerial'}</span><a class="sv" href="https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${p.lat},${p.lng}" target="_blank" rel="noopener">Street View ↗</a>` : ''}</div>`;
+}
+function wireHomePhotos(root = document) {
+  $$('.home-photo img, .home-thumb img', root).forEach((img) => (img.onerror = () => {
+    if (img.dataset.aerial && img.src !== img.dataset.aerial && !img.dataset.fell) {
+      img.dataset.fell = 1;
+      img.src = img.dataset.aerial;
+      const tag = img.parentNode.querySelector('.tag');
+      if (tag) tag.textContent = 'Aerial';
+    } else img.parentNode.classList.add('none');
+  }));
+}
+
+// Address type-ahead: fills street, city, state, zip, and map pin from one box.
+// near() gives a spot to look around (the rep's pin); without it the server looks around the shop.
+function addressAutocomplete(input, onPick, near) {
+  const wrap = document.createElement('div');
+  wrap.className = 'search-results hidden';
+  input.parentNode.style.position = 'relative';
+  input.parentNode.appendChild(wrap);
+  input.setAttribute('autocomplete', 'off');
+  let t, seq = 0;
+  input.addEventListener('input', () => {
+    clearTimeout(t);
+    t = setTimeout(async () => {
+      const q = input.value.trim();
+      if (q.length < 4) return wrap.classList.add('hidden');
+      const n = ++seq;
+      const at = near?.();
+      const list = await api(`/nuvolve/app/api/address-suggest?q=${encodeURIComponent(q)}${at?.lat != null ? `&lat=${at.lat}&lng=${at.lng}` : ''}`).catch(() => []);
+      if (n !== seq) return;
+      if (!list?.length) return wrap.classList.add('hidden');
+      wrap.innerHTML = list.map((a, i) => `<a href="javascript:void 0" data-i="${i}">📍 ${esc(a.label)}</a>`).join('');
+      wrap.classList.remove('hidden');
+      $$('a', wrap).forEach((a) => (a.onmousedown = async (e) => {
+        e.preventDefault();
+        let pick = list[Number(a.dataset.i)];
+        wrap.classList.add('hidden');
+        // Google suggestions carry only a place id; look up the rest.
+        if (pick.place_id) pick = await api(`/nuvolve/app/api/address-place?id=${encodeURIComponent(pick.place_id)}`).catch(() => null) || { address: pick.label.split(',')[0] };
+        input.value = pick.address || input.value;
+        onPick(pick);
+      }));
+    }, 300);
+  });
+  input.addEventListener('blur', () => setTimeout(() => wrap.classList.add('hidden'), 200));
 }
 
 

@@ -71,7 +71,9 @@ async function pageInventory(view) {
       <div class="field"><label>Product</label><select name="product_id">${productOptions(d.products[0]?.id)}</select></div>
       <div class="row"><div class="field"><label>Amount</label><input name="qty" type="number" step="0.01" min="0"></div><div class="field"><label>Unit</label>${unitSelect(d.products[0]?.unit)}</div>
         <div class="field"><label>Put it in</label><select name="place_id">${placeOptions(warehouse?.id)}</select></div></div>
-      <div class="field"><label>Note</label><input name="note" placeholder="Supplier invoice #"></div>`,
+      <div class="field"><label>Note</label><input name="note" placeholder="Supplier invoice #"></div>
+      ${NV.slots('inventory.receive', { products: d.products })}
+      ${NV.slots('stock.receive', {})}`,
     [{ label: 'Cancel' }, { label: 'Add to stock', cls: 'primary', onClick: async (el) => {
       const b = formData(el);
       await api(`/nuvolve/app/api/products/${b.product_id}/stock`, { body: { ...b, reason: 'purchase' } });

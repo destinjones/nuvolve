@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Security · Nuvolve CRM</title>
+  <meta name="description" content="How Nuvolve CRM keeps a pest control company&#39;s data safe: its own database, HTTPS, two-factor login, roles, an activity log, nightly backups and full export.">
+  <link rel="icon" href="/nuvolve/app/icons/nuvolve.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/nuvolve/app/css/site.css">
+</head>
+<body>
+<header class="top"><div class="wrap">
+  <a class="brand" href="/nuvolve/"><img src="/nuvolve/app/icons/nuvolve.svg" alt="">Nuvolve CRM</a>
+  <nav aria-label="Nuvolve"><a href="/nuvolve/pricing.html">Pricing</a><a href="/nuvolve/security.html" aria-current="page">Security</a><a href="/nuvolve/data.html">Your data</a><a class="btn" href="/nuvolve/app/start.html?as=owner">Log in</a></nav>
+</div></header>
+<main class="wrap">
+<div class="hero">
+  <h1>How we keep your company's data safe</h1>
+  <p class="lead">Plain answers about where your data lives, who can see it, and what happens if something goes wrong. This page describes how the app works today.</p>
+</div>
+
+<div class="grid two">
+  <div class="card">
+    <h2>Your own database</h2>
+    <p>Every company gets its own database file. Each request is tied to one company before anything else runs, so another company's staff can't reach your customers, and yours can't reach theirs.</p>
+    <p class="muted small">Links you send customers (pay page, signing, reviews) carry your company too, so they only ever open your records.</p>
+  </div>
+  <div class="card">
+    <h2>Encrypted on the way</h2>
+    <p>The app runs over HTTPS and tells browsers never to fall back to plain HTTP. The login cookie only travels over HTTPS and page scripts can't read it.</p>
+    <p class="muted small">Card numbers never touch Nuvolve. Customers type them on Stripe's page, and Nuvolve keeps only the card brand and last four digits.</p>
+  </div>
+  <div class="card">
+    <h2>Safe logins</h2>
+    <ul class="ticks">
+      <li>Passwords are stored as scrypt hashes, never as text</li>
+      <li>Repeated wrong tries are slowed down</li>
+      <li>Two-factor login with any authenticator app, plus one-time backup codes</li>
+      <li>The owner can require two-factor for owners, admins and branch managers</li>
+      <li>Changing a password or turning on two-factor logs you out everywhere else</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h2>The right people see the right things</h2>
+    <p>Owners and admins set things up. Branch managers see their branch. Office reps run the day. Technicians see their own route on their phone. Sales reps get the door map and their own deals, not the customer list.</p>
+    <p class="muted small">Branch walls are checked by the server on every record, so staff tied to one branch can't open another branch's customers, even by guessing a link.</p>
+  </div>
+  <div class="card">
+    <h2>A record of who did what</h2>
+    <p>The activity log keeps price changes, plan cancellations, payments and voids, rule overrides, team and role changes, password and two-factor changes, imports, undos and every full data export, with who did it and when.</p>
+  </div>
+  <div class="card">
+    <h2>Backups, checked every day</h2>
+    <p>Every night each company's database is copied to a backup, and the last 14 days are kept. Every day the newest backup is opened on its own and checked: it has to pass SQLite's integrity check, and its customers, visits and invoices are counted against the live data.</p>
+    <p class="muted small">Owners and admins see the last check in Settings, under Import &amp; export. Restoring a backup is one command, and it sets the current files aside first.</p>
+  </div>
+  <div class="card">
+    <h2>Keys and connections</h2>
+    <ul class="ticks">
+      <li>API keys are shown once and stored only as a SHA-256 hash</li>
+      <li>Each key carries only the permissions you pick, and can be held to one branch</li>
+      <li>Webhooks are signed (HMAC-SHA256) and only go to public https addresses</li>
+      <li>Your Stripe secret key never leaves the server</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h2>Your data is yours</h2>
+    <p>The owner can download everything, any time, free, even after canceling: spreadsheets for every list and one JSON file, with photos if you want them.</p>
+    <p><a href="/nuvolve/data.html">What's in the download and how leaving works</a></p>
+  </div>
+</div>
+
+<section class="band">
+  <h2>Found a problem? Tell us.</h2>
+  <p>Email <a href="mailto:support@nuvolvecrm.com">support@nuvolvecrm.com</a> with what you found and how to see it. We read every report and will tell you what we're doing about it.</p>
+  <p class="small muted">Please give us a chance to fix it before telling anyone else, and don't open, change or keep other people's data while you look. The same address is in <a href="/nuvolve/.well-known/security.txt">security.txt</a>.</p>
+</section>
+
+</main>
+<footer class="foot"><div class="wrap">
+  <span>Nuvolve CRM</span><a href="/nuvolve/pricing.html">Pricing</a><a href="/nuvolve/security.html" aria-current="page">Security</a><a href="/nuvolve/data.html">Your data</a><a href="/nuvolve/app/#signup">Start a free trial</a><a href="mailto:support@nuvolvecrm.com">support@nuvolvecrm.com</a>
+</div></footer>
+</body>
+</html>

@@ -96,7 +96,8 @@ async function renderThread(box, id) {
     if (m.channel === 'call') return `<div class="ib-event">📞 ${esc(m.body)} · ${fmtWhen(m.created_at)}</div>`;
     if (m.channel === 'note' || m.author === 'system') return `<div class="ib-event">${esc(m.body)} · ${fmtWhen(m.created_at)}</div>`;
     const who = m.direction === 'in' ? '' : m.author === 'ai' ? '🤖 AI receptionist' : esc(m.user_name || 'Office');
-    const status = m.status === 'failed' ? ` · <span class="danger" title="${esc(m.error || '')}">not delivered</span>` : m.status === 'logged' ? ' · saved' : '';
+    const status = m.status === 'failed' ? ` · <span class="danger" title="${esc(m.error || '')}">not delivered</span>` : m.status === 'logged' ? ' · saved'
+      : ['blocked', 'dropped'].includes(m.status) ? ` · <span class="danger">not sent: ${esc(m.error || '')}</span>` : m.status === 'queued' ? ` · waiting: ${esc(m.error || '')}` : '';
     return `<div class="ib-msg ${m.direction} ${m.author}"><div class="ib-bubble">${esc(m.body)}</div><div class="ib-meta small muted">${who ? `${who} · ` : ''}${fmtWhen(m.created_at)}${status}</div></div>`;
   };
   box.innerHTML = `
@@ -137,6 +138,7 @@ async function renderThread(box, id) {
         const r = await api(`/nuvolve/app/api/inbox/${id}/send`, { body: { body } });
         $('#ib-body', box).value = '';
         if (r.status === 'failed') toast('The text did not go through. Check the number.', true);
+        else if (r.status === 'blocked' || r.status === 'queued') toast(r.error, r.status === 'blocked');
         route(true);
       } catch (e) { toast(e.message, true); } finally { if ($('#ib-send', box)) $('#ib-send', box).disabled = false; }
     };

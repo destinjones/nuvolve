@@ -29,7 +29,7 @@ function payLineCells(l) {
   const extra = l.min_top_up ? `<div class="small muted">+ ${money(l.min_top_up)} to reach ${money(l.min_hourly)}/hr</div>` : l.salary ? `<div class="small muted">Salary</div>` : '';
   return `<td><span class="dot" style="background:${esc(l.color || '#999')}"></span><b>${esc(l.name)}</b><div class="small muted">${PAY_TYPE[l.pay_type] || ''}${l.pay_type === 'hourly' ? ` · ${money(l.hourly_rate)}/hr` : l.pay_type === 'production' ? ` · ${l.production_pct}%` : ''}</div></td>
     <td class="right">${hrs(l.hours)}${l.ot ? `<div class="small muted">${hrs(l.ot)} OT</div>` : ''}<div style="white-space:nowrap"><span class="pill ${col}" style="font-size:11px">${src}</span>${l.open_punches ? ' <span class="pill red" style="font-size:11px">still clocked in</span>' : ''}</div></td>
-    <td class="right">${money(l.production)}<div class="small muted">${l.stops} stops</div></td>
+    <td class="right">${money(l.production)}<div class="small muted">${l.stops} stops</div>${(l.production_notes || []).map((n) => `<div class="small muted" style="max-width:260px;margin-left:auto">${esc(n)}</div>`).join('')}</td>
     <td class="right">${money(l.base + l.min_top_up + l.salary)}${extra}</td>
     <td class="right">${money(l.commission)}${l.sales ? `<div class="small muted">${l.sales} sold</div>` : ''}</td>
     <td class="right">${money(l.ot_premium)}</td>

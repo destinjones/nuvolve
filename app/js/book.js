@@ -32,9 +32,12 @@ async function load() {
       <div class="field"><label>Best day (optional)</label><input name="preferred_date" type="date" min="${todayStr()}"></div></div>
       <div class="field"><label>What are you seeing?</label><textarea name="message" placeholder="Ants in the kitchen, scorpions in the garage..."></textarea></div>
       <div class="hp" aria-hidden="true"><label>Website<input name="website" tabindex="-1" autocomplete="off"></label></div>
+      ${NV.slots('book.form', { d })}
       <button class="btn primary big block">Request service</button>
       ${d.company.phone ? `<p class="small muted" style="text-align:center;margin-top:10px">Prefer to talk? Call <a href="tel:${esc(d.company.phone)}">${esc(d.company.phone)}</a></p>` : ''}
     </form>`;
+  // Feature modules wire their parts of the form here (picking a real time slot, the language).
+  NV.emit('book.rendered', { d, form: $('#f') });
   $('#f').onsubmit = async (e) => {
     e.preventDefault();
     const btn = $('button.primary', e.target);
@@ -44,10 +47,11 @@ async function load() {
     if (!body.phone && !body.email) return toast('Add a phone number or email so we can reach you', true);
     btn.disabled = true;
     try {
-      await api(`/nuvolve/app/api/book/${key}`, { body });
+      const result = await api(`/nuvolve/app/api/book/${key}`, { body });
       app.innerHTML = `<div style="text-align:center;padding:20px 0"><div style="font-size:44px">✅</div><h2>Thanks, ${esc(body.first_name)}!</h2>
         <p>We got your request and will reach out shortly to confirm a time.</p>${d.company.phone ? `<p class="small muted">Need us sooner? Call <a href="tel:${esc(d.company.phone)}">${esc(d.company.phone)}</a></p>` : ''}</div>`;
-    } catch (err) { toast(err.message, true); btn.disabled = false; }
+      NV.emit('book.done', { d, body, result, root: app });
+    } catch (err) { toast(err.message, true); btn.disabled = false; NV.emit('book.failed', { d, err, form: e.target }); }
   };
 }
 

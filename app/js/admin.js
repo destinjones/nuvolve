@@ -9,15 +9,21 @@ const pct = (a, b) => (b ? Math.round((a / b) * 100) : 0);
 
 // ---------- Settings ----------
 async function pageSettings(view, _id, params = {}) {
-  const tab = SETTINGS_TABS.some((t) => t[0] === params.tab) ? params.tab : 'company';
+  // Feature modules add their own tabs (NV.settingsTab), before the activity log.
+  const extra = NV.settingsTabs();
+  const tabs = [...SETTINGS_TABS.slice(0, -1), ...extra.map((t) => [t.key, t.label]), SETTINGS_TABS[SETTINGS_TABS.length - 1]];
+  const tab = tabs.some((t) => t[0] === params.tab) ? params.tab : 'company';
   const d = await api('/nuvolve/app/api/settings');
   view.innerHTML = `
     <div class="page-head"><div><h1>Settings</h1><div class="muted">Only owners and admins see this page.</div></div></div>
-    <div class="tabs">${SETTINGS_TABS.map(([k, label]) => `<a href="#/settings?tab=${k}" class="${k === tab ? 'on' : ''}">${label}</a>`).join('')}</div>
+    <div class="tabs">${tabs.map(([k, label]) => `<a href="#/settings?tab=${k}" class="${k === tab ? 'on' : ''}">${label}</a>`).join('')}</div>
     <div id="tab"></div>`;
   const box = $('#tab');
+  const feature = extra.find((t) => t.key === tab);
+  if (feature) return feature.render(box, d);
   ({ company: settingsCompany, team: settingsTeam, licenses: settingsLicenses, services: settingsServices, products: settingsProducts, branches: settingsBranches, rules: settingsRules,
-    sales: settingsSales, followup: settingsFollowup, payments: settingsPayments, data: settingsData, integrations: settingsIntegrations, activity: settingsActivity })[tab](box, d);
+    sales: settingsSales, followup: settingsFollowup, payments: settingsPayments, data: settingsData, integrations: settingsIntegrations,
+    activity: (b) => NV.run('settings.activity', { box: b }, () => settingsActivity(b)) })[tab](box, d);
 }
 
 function settingsCompany(box, d) {
@@ -34,9 +40,9 @@ function settingsCompany(box, d) {
     <div class="row"><div class="field"><label>Sales tax on services (%)</label><input name="tax_rate" type="number" step="0.001" min="0" max="20" value="${esc(s.tax_rate || '0')}">
       <div class="hint">Added to every service invoice. Leave 0 if pest control isn't taxed in your state. Mark tax-exempt customers on their page.</div></div>
     <div class="field"><label>Tax name on invoices</label><input name="tax_label" value="${esc(s.tax_label || 'Sales tax')}"></div></div>
-    <div class="field"><label>Time zone</label><select name="timezone">${['', 'America/New_York', 'America/Chicago', 'America/Denver', 'America/Phoenix', 'America/Los_Angeles', 'America/Anchorage', 'Pacific/Honolulu']
+    <div class="field"><label>Time zone</label><select name="timezone">${[...new Set(['', 'America/New_York', 'America/Chicago', 'America/Denver', 'America/Phoenix', 'America/Los_Angeles', 'America/Anchorage', 'Pacific/Honolulu', s.timezone || ''])]
       .map((z) => `<option value="${z}" ${z === (s.timezone || '') ? 'selected' : ''}>${z ? z.replace('America/', '').replace('Pacific/', '').replace('_', ' ') : 'Server time'}</option>`).join('')}</select>
-      <div class="hint">Used for the times printed on service records.</div></div>
+      <div class="hint">When your day starts and ends, and the times printed on service records.</div></div>
     <div class="field"><label>Message on the customer pay page</label><textarea name="portal_message">${esc(s.portal_message || '')}</textarea></div>
     <button class="btn primary">Save company info</button>
   </form>
@@ -44,6 +50,7 @@ function settingsCompany(box, d) {
     <h2>Login security</h2>
     <label class="check"><input type="checkbox" name="require_2fa" ${s.require_2fa === '1' ? 'checked' : ''}> Require two-factor login for owners, admins and branch managers</label>
     <div class="hint">They type a code from an app on their phone after their password. Anyone without it set up is asked to do it the next time they open Nuvolve. ${BOOT.me.totp_enabled ? '' : '<b>Turn it on for your own login first in <a href="#/account">My account</a>.</b>'}</div>
+    ${NV.slots('settings.security', { s })}
     <button class="btn primary" style="margin-top:12px">Save login security</button>
   </form>`;
   $('#company').onsubmit = async (e) => {
@@ -52,7 +59,7 @@ function settingsCompany(box, d) {
   };
   $('#security').onsubmit = async (e) => {
     e.preventDefault();
-    try { await api('/nuvolve/app/api/settings', { method: 'PUT', body: { require_2fa: e.target.require_2fa.checked ? '1' : '0' } }); await refreshBoot(); toast('Saved'); } catch (err) { toast(err.message, true); }
+    try { await api('/nuvolve/app/api/settings', { method: 'PUT', body: { ...formData(e.target), require_2fa: e.target.require_2fa.checked ? '1' : '0' } }); await refreshBoot(); toast('Saved'); } catch (err) { toast(err.message, true); }
   };
   addressAutocomplete($('#company [name=shop_address]'), (a) => { $('#company [name=shop_address]').value = a.label; });
 }
@@ -62,7 +69,7 @@ function settingsTeam(box, d) {
   box.innerHTML = `<div class="card">
     <div class="card-head"><h2>Team</h2><button class="btn sm primary" id="add-user">+ Add person</button></div>
     <div class="table-wrap"><table class="list"><thead><tr><th>Name</th><th>Role</th>${d.locations.length > 1 ? '<th>Branch</th>' : ''}<th>License</th></tr></thead><tbody>
-    ${d.users.map((u) => `<tr class="click" data-user="${u.id}"><td><span class="dot" style="background:${esc(u.color)}"></span><b>${esc(u.name)}</b>${u.totp_enabled ? ' <span title="Two-factor login on">🔒</span>' : ''}${u.active ? '' : ' <span class="pill">Off</span>'}<div class="small muted">${esc(u.email || 'No login yet')}</div></td>
+    ${d.users.map((u) => `<tr class="click" data-user="${u.id}"><td><span class="dot" style="background:${esc(u.color)}"></span><b>${esc(u.name)}</b>${u.totp_enabled ? ' <span title="Two-factor login on">🔒</span>' : ''}${u.active ? '' : ' <span class="pill">Off</span>'}${NV.slots('team.badges', { u })}<div class="small muted">${esc(u.email || 'No login yet')}</div></td>
       <td>${ROLE_LABEL[u.role]}${u.runs_routes ? '<div class="small muted">Runs routes</div>' : ''}</td>
       ${d.locations.length > 1 ? `<td class="small">${esc(locName(u.location_id) || 'All branches')}</td>` : ''}
       <td class="small">${u.license_no ? esc(u.license_no) : '<span class="muted">None</span>'}</td></tr>`).join('')}</tbody></table></div>
@@ -83,9 +90,12 @@ function settingsTeam(box, d) {
     ${d.locations.length > 1 || u.location_id ? `<div class="field"><label>Branch</label><select name="location_id" ${u.role === 'owner' ? 'disabled' : ''}><option value="">All branches</option>${d.locations.map((l) => `<option value="${l.id}" ${u.location_id === l.id ? 'selected' : ''}>${esc(l.name)}</option>`).join('')}</select></div>` : ''}</div>
     <div class="row"><div class="field"><label>Applicator license #</label><input name="license_no" value="${esc(u.license_no || '')}"></div>
     <div class="field"><label>Map color</label><input name="color" type="color" value="${esc(u.color)}" style="height:42px"></div></div>
-    <div class="field"><label>${u.id ? 'New password (leave blank to keep)' : 'Password'}</label><input name="password" type="text" placeholder="${u.id ? '' : 'At least 8 characters'}"></div>
+    <div class="field"><label>Territory zips</label><input name="service_zips" value="${esc(u.service_zips || '')}" placeholder="75074, 75075 or 750*">
+      <div class="hint">When you buy a route or hand one off, accounts in these zips go to this tech first. Leave blank to go by distance.</div></div>
+    <div class="field"><label>${u.id ? 'New password (leave blank to keep)' : 'Password'}</label><input name="password" type="text" placeholder="${u.id ? '' : 'At least 10 characters'}"></div>
     <label class="check"><input type="checkbox" name="runs_routes" ${u.runs_routes ? 'checked' : ''}> Runs routes (shows on schedule)</label>
     ${u.id && u.role !== 'owner' ? `<label class="check"><input type="checkbox" name="active" ${u.active ? 'checked' : ''}> Active</label>` : ''}
+    ${NV.slots('team.member', { u })}
     ${u.totp_enabled && (u.role !== 'owner' || BOOT.me.role === 'owner') ? `<div class="alert info" style="margin-top:10px"><span>🔒 Two-factor login is on. Lost their phone?</span><button type="button" class="btn sm" id="reset2fa">Reset two-factor</button></div>` : ''}`,
     [{ label: 'Cancel' }, { label: 'Save', cls: 'primary', onClick: async (el) => {
       const body = formData(el);
@@ -98,6 +108,7 @@ function settingsTeam(box, d) {
       if (!confirm(`Reset two-factor for ${u.name}? They are logged out and set it up again next time they log in.`)) return;
       try { await api(`/nuvolve/app/api/users/${u.id}/reset-2fa`, { method: 'POST' }); m.close(); toast('Two-factor reset'); route(); } catch (e) { toast(e.message, true); }
     };
+    NV.emit('team.member.rendered', { u, el: m.el });
     return m;
   };
   $('#add-user').onclick = () => userModal();
@@ -216,7 +227,7 @@ function settingsServices(box, d) {
       const b = formData(el);
       if (t.id) {
         const r = await api(`/nuvolve/app/api/service-types/${t.id}`, { method: 'PUT', body: b });
-        toast(r.repriced ? `Saved. ${r.repriced} plans repriced.` : 'Saved');
+        toast(r.repriced || r.locked ? `Saved. ${r.repriced} plan${r.repriced === 1 ? '' : 's'} repriced${r.locked ? `; ${r.locked} with a price lock kept ${r.locked === 1 ? 'its' : 'their'} price` : ''}.` : 'Saved');
       } else { await api('/nuvolve/app/api/service-types', { body: { ...b, active: true } }); toast('Service added'); }
       await refreshBoot(); route();
     } }]);
@@ -403,6 +414,7 @@ function settingsProducts(box, d) {
     <div class="row"><div class="field"><label>Signal word</label><select name="signal_word">${['', 'Caution', 'Warning', 'Danger'].map((w) => `<option ${w === (p.signal_word || '') ? 'selected' : ''}>${w}</option>`).join('')}</select></div>
       <div class="field"><label>Registrant</label><input name="registrant" value="${esc(p.registrant || '')}"></div></div>
     <label class="check"><input type="checkbox" name="restricted_use" ${p.restricted_use ? 'checked' : ''}> Restricted use pesticide (RUP)</label>
+    ${NV.slots('product.form', { p })}
     <input type="hidden" name="epa_status" value="${esc(p.epa_status || '')}">
     <h3 style="margin-top:14px">Ordering</h3>
     <div class="row"><div class="field"><label>Vendor</label><input name="vendor" value="${esc(p.vendor || '')}" placeholder="Target Specialty Products"></div>
@@ -431,6 +443,7 @@ function settingsProducts(box, d) {
         <div class="field"><label>Unit</label><select name="unit">${UNITS.map((u) => `<option ${u === p.unit ? 'selected' : ''}>${u}</option>`).join('')}</select></div></div>
       <div class="row"><div class="field"><label>Note</label><input name="note" placeholder="Invoice #, supplier..."></div>
         <div class="field"><label>Warn me below (${esc(p.unit)})</label><input name="low_stock" type="number" step="0.01" min="0" value="${p.low_stock ?? ''}"></div></div>
+      ${NV.slots('stock.receive', { p })}
       <div class="hint">This adds to or counts the warehouse. Every product a tech logs on a ticket comes off their truck automatically, converted to ${esc(p.unit)}. Trucks and transfers are on the <a href="#/inventory">Inventory</a> page.</div>
       ${h.moves.length ? `<div class="table-wrap" style="max-height:220px;overflow:auto;margin-top:10px"><table class="list small"><tbody>${h.moves.map((m) => `<tr><td>${fmtDate(m.created_at)}</td>
         <td>${m.reason === 'use' ? `Used${m.visit_date ? ` on ${fmtDate(m.visit_date)}` : ''}` : m.reason === 'count' ? 'Shelf count' : m.reason === 'transfer' ? 'Moved' : 'Bought'}${m.place_name ? ` · ${esc(m.place_name)}` : ''}${m.user_name ? ` · ${esc(m.user_name)}` : ''}${m.note ? ` · ${esc(m.note)}` : ''}</td>
@@ -479,10 +492,10 @@ function settingsPayments(box, d) {
     <form class="card" id="cards">
       <h2>Card payments from your customers</h2>
       ${d.stripeEnabled ? '<div class="alert ok">✅ Your Stripe account is connected. Customers can pay by card and save cards for autopay.</div>'
-        : '<div class="alert info">Demo mode: everything works but no money moves. When you are ready, money goes straight to <b>your own</b> Stripe account: create one free at <a href="https://dashboard.stripe.com/register" target="_blank">stripe.com</a>, then paste your secret key below (Developers → API keys).</div>'}
+        : '<div class="alert info"><span>Demo mode: everything works but no money moves. When you are ready, money goes straight to <b>your own</b> Stripe account: create one free at <a href="https://dashboard.stripe.com/register" target="_blank">stripe.com</a>, then paste your secret key below (Developers → API keys).</span></div>'}
       <div class="field"><label>Stripe secret key</label><input name="stripe_secret_key" type="password" autocomplete="off" placeholder="${d.settings.stripe_key_set ? '•••••••• saved (type a new one to replace, or remove)' : 'sk_live_...'}"></div>
       <button class="btn primary">Save key</button>
-    </form></div>`;
+    </form>${NV.slots('settings.payments', { d })}</div>`;
   if ($('#sub2')) $('#sub2').onclick = subscribe;
   if ($('#manage')) $('#manage').onclick = async () => { try { location.href = (await api('/nuvolve/app/api/billing/manage', { method: 'POST' })).url; } catch (e) { toast(e.message, true); } };
   $('#cards').onsubmit = async (e) => {
@@ -491,6 +504,7 @@ function settingsPayments(box, d) {
     if (!k) return toast('Paste your key first', true);
     try { await api('/nuvolve/app/api/settings', { method: 'PUT', body: { stripe_secret_key: k } }); await refreshBoot(); toast(k === 'remove' ? 'Key removed' : 'Stripe connected'); route(); } catch (err) { toast(err.message, true); }
   };
+  NV.emit('settings.payments.rendered', { d, box });
 }
 
 function settingsData(box, d) {
@@ -506,9 +520,10 @@ function settingsData(box, d) {
     </div>
     <div class="card">
       <h2>Take your data with you</h2>
-      <p class="small muted">Your data is yours. Download it any time.</p>
-      <div class="actions"><a class="btn sm" href="/nuvolve/app/api/export/customers">Customers, plans and next service (CSV)</a><a class="btn sm" href="/nuvolve/app/api/merge/export">Everything, with full history (Nuvolve file)</a></div>
+      ${NV.slots('settings.data', { d }) || '<p class="small muted">Your data is yours. Download it any time.</p>'}
+      <div class="actions"><a class="btn sm" href="/nuvolve/app/api/export/customers">Customers, plans and next service (CSV)</a><a class="btn sm" href="/nuvolve/app/api/merge/export">Nuvolve file, for moving into another Nuvolve account</a></div>
     </div></div>`;
+  NV.emit('settings.data.rendered', { box, d });
   $('#import').onclick = async () => {
     const file = $('#csv').files[0];
     if (!file) return toast('Pick a CSV file first', true);
@@ -709,12 +724,13 @@ async function pageInsights(view, _id, params = {}) {
 // ---------- Acquisitions ----------
 async function pageAcquisitions(view) {
   const [merges, codes, d] = await Promise.all([api('/nuvolve/app/api/merges'), api('/nuvolve/app/api/merge/codes'), api('/nuvolve/app/api/settings')]);
+  const routeTechs = d.users.filter((u) => u.active && u.runs_routes && u.role !== 'sales');
   view.innerHTML = `
     <div class="page-head"><div><h1>Acquisitions</h1><div class="muted">Buy a route and bring every account over in minutes, with history, plans, balances and the schedule intact. Or get your own book ready to sell.</div></div></div>
     <div class="grid cols-2">
       <div class="card">
         <h2>🤝 Buying: bring accounts in</h2>
-        <ol class="steps"><li>Get the seller's transfer code (if they're on Nuvolve) or their Nuvolve file. On another system? Use <a href="#/switch">Switch to Nuvolve</a>.</li>
+        <ol class="steps"><li><span>Get the seller's transfer code (if they're on Nuvolve) or their Nuvolve file. On another system? Use <a href="#/switch">Switch to Nuvolve</a>.</span></li>
           <li>Preview: see accounts, recurring revenue, balances, duplicates and out-of-area addresses before anything changes.</li>
           <li>Import into an existing branch or a new one. One click undoes it.</li></ol>
         <div class="field"><label>Seller's transfer code</label><input id="code" placeholder="NUV-XXXXX-XXXXX"></div>
@@ -733,7 +749,16 @@ async function pageAcquisitions(view) {
     <div class="card"><h2>Past imports</h2>${merges.length ? `<table class="list"><thead><tr><th>Seller</th><th>Branch</th><th>When</th><th>Brought in</th><th></th></tr></thead><tbody>
       ${merges.map((m) => `<tr class="${m.undone_at ? 'muted' : ''}"><td><b>${esc(m.seller_name)}</b><div class="small muted">by ${esc(m.source)}</div></td><td>${esc(m.location || '')}</td><td class="small">${fmtDate(m.created_at)}</td>
         <td class="small">${m.counts ? `${m.counts.added} new, ${m.counts.merged} merged, ${m.counts.plans} plans, ${m.counts.visits} visits` : ''}</td>
-        <td class="right">${m.undone_at ? '<span class="pill">Undone</span>' : `<button class="btn sm" data-undo="${m.id}">Undo</button>`}</td></tr>`).join('')}</tbody></table>` : '<p class="muted">No imports yet.</p>'}</div>`;
+        <td class="right">${m.undone_at ? '<span class="pill">Undone</span>' : `<button class="btn sm" data-undo="${m.id}">Undo</button>`}</td></tr>`).join('')}</tbody></table>` : '<p class="muted">No imports yet.</p>'}</div>
+    <div class="card" id="handoff">
+      <div class="card-head"><div><h2>🔀 Hand off a route</h2><div class="small muted">A tech you kept from a deal is moving on, or you want their stops folded into your other routes. Spread their accounts over the team by territory, or give them all to one person. Their upcoming visits move with the accounts; finished history stays as it is.</div></div></div>
+      <div class="row">
+        <div class="field"><label>Whose route</label><select id="ho-tech">${routeTechs.map((u) => `<option value="${u.id}">${esc(u.name)}</option>`).join('')}</select></div>
+        <div class="field"><label>Who takes it</label><select id="ho-to"><option value="territory">Everyone, by territory</option>${routeTechs.map((u) => `<option value="${u.id}">All to ${esc(u.name)}</option>`).join('')}</select></div>
+      </div>
+      <button class="btn" id="ho-preview" ${routeTechs.length < 2 ? 'disabled' : ''}>Preview the handoff</button>
+      <div id="ho-plan" style="margin-top:12px"></div>
+    </div>`;
 
   let source = null;
   const readSource = async () => {
@@ -758,8 +783,38 @@ async function pageAcquisitions(view) {
   $$('[data-undo]', view).forEach((b) => (b.onclick = () => modal('Undo this import?', '<p>Every account, plan, visit, invoice and payment this import created is removed. Customers that were merged into your existing accounts stay, minus the imported history.</p>',
     [{ label: 'Cancel' }, { label: 'Undo import', cls: 'primary', onClick: async () => { await api(`/nuvolve/app/api/merges/${b.dataset.undo}/undo`, { method: 'POST' }); toast('Import undone'); route(); } }])));
 
+  // Hand off a route.
+  const ho = { overrides: {} };
+  let hoPlan = null;
+  const hoBody = () => ({ tech_id: $('#ho-tech').value, to: $('#ho-to').value, overrides: ho.overrides });
+  const hoShow = async () => {
+    try {
+      hoPlan = await api('/nuvolve/app/api/routes/handoff', { body: hoBody() });
+    } catch (err) { $('#ho-plan').innerHTML = ''; return toast(err.message, true); }
+    const box = $('#ho-plan');
+    if (!hoPlan.stops.length) { box.innerHTML = `<p class="muted">${esc(hoPlan.tech.name)} has no accounts on their route right now.</p>`; return; }
+    box.innerHTML = `<p><b>${hoPlan.stops.length}</b> accounts worth <b>${money(hoPlan.yearly)}</b>/yr move off ${esc(hoPlan.tech.name)}'s route.</p><div id="ho-rm"></div>
+      <label class="check"><input type="checkbox" id="ho-stop"> Take ${esc(hoPlan.tech.name.split(' ')[0])} off the schedule afterwards (stops running routes)</label>
+      <div class="actions" style="justify-content:flex-end"><button class="btn primary" id="ho-apply">Move ${hoPlan.stops.length} accounts</button></div>`;
+    RouteMerge.render($('#ho-rm'), hoPlan, ho, hoShow);
+    $('#ho-apply').onclick = () => modal('Move these accounts?', `<p>Plans and upcoming visits for ${hoPlan.stops.length} accounts move to their new techs, and each tech gets a note. Visits already started today stay put.</p>`,
+      [{ label: 'Cancel' }, { label: 'Move them', cls: 'primary', onClick: async () => {
+        try {
+          const r = await api('/nuvolve/app/api/routes/handoff', { body: { ...hoBody(), apply: true, stop_routes: $('#ho-stop').checked } });
+          toast(`Moved ${r.moved} accounts: ${r.by_tech.map((t) => `${t.name} ${t.stops}`).join(', ')}`);
+          ho.overrides = {};
+          await refreshBoot(); route();
+        } catch (err) { toast(err.message, true); }
+      } }]);
+  };
+  if ($('#ho-preview')) {
+    $('#ho-preview').onclick = () => { ho.overrides = {}; hoShow(); };
+    $('#ho-tech').onchange = $('#ho-to').onchange = () => { ho.overrides = {}; if (hoPlan) hoShow(); };
+  }
+
   function showPreview(p) {
     const c = p.counts;
+    const buyerTechs = routeTechs;
     const mapRow = (kind, x, mine) => `<tr><td>${esc(x.name)}${x.epa_reg ? ` <span class="small muted">EPA ${esc(x.epa_reg)}</span>` : ''}${x.email ? ` <span class="small muted">${esc(x.email)}</span>` : ''}</td>
       <td><select data-map="${kind}" data-id="${x.seller_id}"><option value="create">Add as new</option>${mine.map((m) => `<option value="${m.id}" ${x.to === m.id ? 'selected' : ''}>Use my ${esc(m.name)}</option>`).join('')}</select></td></tr>`;
     $('#pv').innerHTML = `<div class="card preview">
@@ -786,18 +841,74 @@ async function pageAcquisitions(view) {
           <div><h3>Technicians</h3><table class="list small">${p.maps.techs.map((x) => mapRow('techs', x, d.users.filter((u) => u.active && u.runs_routes))).join('') || '<tr><td class="muted">None</td></tr>'}</table>
             <p class="small muted">New techs come over without a login. Give them one in Team if they stay on.</p></div>
         </div></details>
+      <div class="rm-section">
+        <h3 style="margin-top:16px">🗺️ Routes: who runs these accounts</h3>
+        <p class="small muted">Keep a seller's tech on their own route, or hand their stops to your techs: an account goes to the tech whose territory zips cover it, else to the tech already working closest to it, without piling onto anyone who is already full. Termite and other licensed work only goes to licensed techs. Move any account by hand below.</p>
+        ${d.locations.filter((l) => l.active).length > 1 ? `<div class="field"><label>Branches</label><select id="lmode">
+          <option value="by_area">Put each account in the branch that covers its address (recommended)</option>
+          <option value="one">Put every account in the branch picked above</option></select></div>` : ''}
+        <div id="rm-techs">${RouteMerge.techChoices(p.routes, buyerTechs)}</div>
+        <div id="rm-branches" class="small muted" style="margin:8px 0"></div>
+        <div id="rm-plan"></div>
+      </div>
       <div class="actions" style="margin-top:14px;justify-content:flex-end"><button class="btn primary big" id="commit" ${p.alreadyImported ? 'disabled' : ''}>Import ${c.customers} accounts</button></div>
     </div>`;
-    $('#tloc').onchange = (e) => $('#newloc').classList.toggle('hidden', e.target.value !== 'new');
+    const rm = { overrides: {} };
+    const routeChoices = () => {
+      const techs = {};
+      $$('[data-tech]').forEach((s) => { techs[s.dataset.tech] = s.value; });
+      return { techs, overrides: rm.overrides };
+    };
+    const target = () => {
+      const isNew = $('#tloc').value === 'new';
+      return { location_id: isNew ? null : $('#tloc').value, new_location: isNew ? { name: $('#newname').value || p.seller?.name || 'New branch' } : null,
+        location_mode: $('#lmode')?.value || 'one', duplicates: $('#dups').value };
+    };
+    const showRoutes = (plan) => {
+      $('#rm-branches').innerHTML = plan.branches.length > 1 || $('#lmode')?.value === 'by_area'
+        ? `Accounts by branch: ${plan.branches.map((b) => `<b>${esc(b.name)}</b> ${b.stops} (${money(b.yearly)}/yr)`).join(' · ')}` : '';
+      if (plan.already_yours.length) $('#rm-branches').innerHTML += `<div>${plan.already_yours.length} already your customers keep ${plan.already_yours.some((a) => a.skip) ? 'their account as is' : 'your plan and your tech'}.</div>`;
+      RouteMerge.render($('#rm-plan'), plan, rm, replan);
+    };
+    let seq = 0;
+    const replan = async () => {
+      const my = ++seq;
+      $('#rm-plan').style.opacity = 0.5;
+      try {
+        const plan = await api('/nuvolve/app/api/merge/routes', { body: { ...source, ...target(), routes: routeChoices() } });
+        if (my === seq) showRoutes(plan);
+      } catch (err) { toast(err.message, true); }
+      if (my === seq) $('#rm-plan').style.opacity = 1;
+    };
+    let touched = false;
+    showRoutes(p.routes);
+    if ($('#lmode')) {
+      $('#lmode').value = 'by_area';
+      // Accounts outside every branch's area would land in whatever branch is picked; offer the seller's own branch instead.
+      api('/nuvolve/app/api/merge/routes', { body: { ...source, ...target(), routes: routeChoices() } }).then((plan) => {
+        if (!touched && plan.branches.some((b) => b.stops > b.by_area)) {
+          $('#tloc').value = 'new';
+          $('#newloc').classList.remove('hidden');
+          $('#newname').value = p.seller?.address?.split(',').slice(-2, -1)[0]?.trim() || p.seller?.name || 'New branch';
+        }
+        replan();
+      }).catch(() => replan());
+    }
+    $$('[data-tech]').forEach((sel) => (sel.onchange = replan));
+    $('#dups').onchange = replan;
+    if ($('#lmode')) $('#lmode').onchange = replan;
+    $('#newname').onchange = replan;
+    $('#tloc').onchange = (e) => { touched = true; $('#newloc').classList.toggle('hidden', e.target.value !== 'new'); replan(); };
     $('#commit').onclick = async (e) => {
       const maps = { services: {}, products: {}, techs: {} };
       $$('[data-map]').forEach((s) => { maps[s.dataset.map][s.dataset.id] = s.value === 'create' ? 'create' : Number(s.value); });
-      const isNew = $('#tloc').value === 'new';
       e.target.disabled = true;
       try {
-        const r = await api('/nuvolve/app/api/merge/commit', { body: { ...source, location_id: isNew ? null : $('#tloc').value, new_location: isNew ? { name: $('#newname').value } : null, duplicates: $('#dups').value, maps } });
+        const r = await api('/nuvolve/app/api/merge/commit', { body: { ...source, ...target(), maps, routes: routeChoices() } });
         await refreshBoot();
+        const rt = r.counts.routes;
         modal('Welcome aboard 🎉', `<p><b>${r.counts.added}</b> new accounts and <b>${r.counts.merged}</b> merged into existing ones.</p>
+          ${rt ? `<p class="small"><b>Routes:</b> ${rt.by_tech.map((t) => `${esc(t.name)} ${t.stops}`).join(', ')}.${rt.unassigned ? ` ${rt.unassigned} still need a tech.` : ''} Each of your techs got a note about their new accounts.${rt.history_only_techs ? ` ${rt.history_only_techs} seller tech${rt.history_only_techs === 1 ? ' is' : 's are'} kept switched off so their past visits still show who did them.` : ''}</p>` : ''}
           <p class="small">${r.counts.plans} plans, ${r.counts.visits} visits (${r.counts.futureVisits} upcoming), ${r.counts.invoices} invoices${r.counts.agreements ? `, ${r.counts.agreements} signed agreements` : ''}${r.counts.termiteContracts ? `, ${r.counts.termiteContracts} termite warranties (auto-renew off until a card is on file)` : ''}${r.counts.devices ? `, ${r.counts.devices} stations` : ''}. ${r.counts.new_techs ? `${r.counts.new_techs} techs added.` : ''} ${r.counts.new_services ? `${r.counts.new_services} services added.` : ''}</p>`,
         [{ label: 'See the customers', cls: 'primary', onClick: () => { location.hash = '#/customers'; } }]);
       } catch (err) { toast(err.message, true); e.target.disabled = false; }

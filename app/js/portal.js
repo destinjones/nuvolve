@@ -35,6 +35,8 @@ async function load() {
     setTimeout(() => toast("Done. We won't send you offers anymore. You'll still get service and billing messages."), 50);
   }
   D.referral = await api(`/nuvolve/app/api/portal/${token}/referral`).catch(() => null);
+  // Spanish speakers see their page in Spanish (their account setting, or what they picked on this device).
+  await NV.useLang(NV.preferredLang(D.customer.lang));
   render();
   if (q.get('paid')) {
     toast('Payment received. Thank you!');
@@ -43,6 +45,10 @@ async function load() {
 }
 
 const tipAmount = () => (tipCustom != null ? tipCustom : Math.round(D.balance * tipPct) / 100);
+
+// How a payment was made, in the customer's words rather than the code stored with it.
+const PAY_METHODS = { card: 'Card', autopay: 'Autopay', ach: 'Bank transfer', cash: 'Cash', check: 'Check', credit: 'Account credit', returned: 'Returned bank payment', other: 'Other' };
+const payMethod = (m) => PAY_METHODS[m] || (m ? String(m).charAt(0).toUpperCase() + String(m).slice(1) : 'Payment');
 
 function render() {
   const c = D.company;
@@ -68,6 +74,7 @@ function render() {
           <div class="small muted" style="margin-top:8px">🔒 Secure card payment${D.stripeEnabled ? ' by Stripe' : ' (demo mode, no real charge)'}</div>`
         : `<div style="font-size:40px">✅</div><h2>You're all paid up</h2><p class="muted">Thank you!</p>`}
       </div>
+      ${NV.slots('portal.top', { data: D, token })}
 
       <div class="card">
         <h2>Autopay</h2>
@@ -113,7 +120,7 @@ function render() {
         : k.status === 'cancelled' ? 'cancelled' : `signed ${fmtDate(String(k.signed_at || '').slice(0, 10))}${k.cancel_open ? `. You can cancel until ${fmtDate(k.cancel_by)}` : ''}`}</span></span>
         ${k.url ? `<a class="btn sm ${k.status === 'awaiting' ? 'primary' : ''}" href="${esc(k.url)}">${k.status === 'awaiting' ? 'Review and sign' : 'View'}</a>` : ''}</div>`).join('')}</div>` : ''}
 
-      ${D.payments.length ? `<div class="card"><h2>Payments</h2>${D.payments.map((p) => `<div class="line small"><span>${fmtDate(p.date)} · ${esc(p.method)}${p.tip ? ` · includes ${money(p.tip)} tip` : ''}</span><b>${money(p.amount + (p.tip || 0))}</b></div>`).join('')}</div>` : ''}
+      ${D.payments.length ? `<div class="card"><h2>Payments</h2>${D.payments.map((p) => `<div class="line small"><span>${fmtDate(p.date)} · ${esc(payMethod(p.method))}${p.tip ? ` · includes ${money(p.tip)} tip` : ''}</span><b>${money(p.amount + (p.tip || 0))}</b></div>`).join('')}</div>` : ''}
 
       ${D.referral?.enabled ? `<div class="card"><h2>🎁 Give ${money(D.referral.friendReward)}, get ${money(D.referral.reward)}</h2>
         <p class="small">Know someone with bugs? ${D.referral.friendReward ? `They get ${money(D.referral.friendReward)} off` : 'Send them our way'} and you get a ${money(D.referral.reward)} credit after their first service.</p>
@@ -121,6 +128,8 @@ function render() {
           <div class="row"><button class="btn primary" id="ref-share">Share my link</button><a class="btn" href="sms:?&body=${encodeURIComponent(`I use ${c.name || 'these guys'} for pest control. Book with my link and get ${money(D.referral.friendReward)} off: ${D.referral.link}`)}">Text it</a></div>`
           : `<p>Or have them mention your code: <b>${esc(D.referral.code)}</b></p>`}
         ${D.referral.referred ? `<p class="small muted" style="margin-top:8px">You've referred ${D.referral.referred} ${D.referral.referred === 1 ? 'person' : 'people'} ${D.referral.earned ? ` and earned ${money(D.referral.earned)}` : ''}. Thank you!</p>` : ''}</div>` : ''}
+
+      ${NV.slots('portal.cards', { data: D, token })}
 
       ${D.referral ? `<label class="check small" style="justify-content:center;margin-bottom:8px"><input type="checkbox" id="offers" ${D.referral.optedOut ? '' : 'checked'}> Send me seasonal offers</label>` : ''}
 
@@ -144,7 +153,8 @@ function render() {
   if ($('#autopay')) $('#autopay').onchange = async (e) => {
     try { await api(`/nuvolve/app/api/portal/${token}/autopay`, { body: { on: e.target.checked } }); toast(e.target.checked ? 'Autopay is on' : 'Autopay is off'); } catch (err) { toast(err.message, true); e.target.checked = !e.target.checked; }
   };
-  $$('[data-move]').forEach((b) => (b.onclick = () => {
+  // Changing the day can be taken over by a feature (pick a real open slot): NV.override('portal.move').
+  $$('[data-move]').forEach((b) => (b.onclick = () => NV.run('portal.move', { visit: D.upcoming.find((x) => x.id === Number(b.dataset.move)), data: D, token, reload: load }, () => {
     const u = D.upcoming.find((x) => x.id === Number(b.dataset.move));
     modal('Change your service day', `<p>Your visit is on <b>${fmtDate(u.date, { weekday: 'long', month: 'long', day: 'numeric' })}</b>. Tell us a better day and we'll confirm it.</p>
       <div class="field"><label>Better day</label><input name="preferred_date" type="date" min="${todayStr()}"></div>
@@ -154,8 +164,9 @@ function render() {
       toast("Got it. We'll confirm your new day.");
       await load();
     } }]);
-  }));
+  })));
   portalSightings();
+  NV.emit('portal.rendered', { data: D, token, root: app, rerender: render, reload: load });
   $('#send').onclick = async () => {
     try {
       await api(`/nuvolve/app/api/portal/${token}/request`, { body: { message: $('#req').value, preferred_date: $('#req-date').value } });
@@ -176,7 +187,7 @@ async function pay(e) {
     modal('Pay by card', `
       <div class="alert info">Demo mode: use any test number. No real money moves.</div>
       <div class="field"><label>Card number</label><input name="card_number" value="4242 4242 4242 4242" inputmode="numeric"></div>
-      <div class="row"><div class="field"><label>Expires</label><input value="12/30"></div><div class="field"><label>CVC</label><input value="123"></div></div>
+      <div class="row"><div class="field"><label>Expires</label><input name="exp" value="12/30"></div><div class="field"><label>CVC</label><input value="123"></div></div>
       <p><b>Total: ${money(r.amount + body.tip)}</b>${body.tip ? ` <span class="muted small">(includes ${money(body.tip)} tip)</span>` : ''}</p>`,
     [{ label: 'Cancel' }, { label: `Pay ${money(r.amount + body.tip)}`, cls: 'primary', onClick: async (m) => {
       await api(`/nuvolve/app/api/portal/${token}/demo-pay`, { body: { ...formData(m), ...body } });

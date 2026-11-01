@@ -67,6 +67,7 @@ async function pageDispatch(view, _id, params) {
             <button class="btn primary sm" id="auto">Auto-assign</button></div>
           ${d.unassigned.slice(0, 8).map((s) => `<div class="small" style="padding:4px 0">${esc(s.name)} · ${esc(s.address)}${s.time_window ? ` · ⏰ ${esc(s.time_window)}` : ''}</div>`).join('')}
           ${d.unassigned.length > 8 ? `<div class="small muted">and ${d.unassigned.length - 8} more</div>` : ''}</div>` : ''}
+        ${NV.slots('dispatch.side', { d })}
         <p class="small muted">${d.provider === 'mapbox' ? 'Drive times from Mapbox road data.' : 'Drive times are estimates from distance. Add a MAPBOX_TOKEN to use real road drive times.'}
           Techs show up on the map while the tech app is open on their phone.</p>
       </div>
