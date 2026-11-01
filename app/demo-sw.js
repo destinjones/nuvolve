@@ -1159,9 +1159,9 @@
 // (see demo/record.js). Logins pick which role's answers to use. What a visitor adds or changes is kept
 // in this browser by the overlay (demo/overlay.js, joined in front of this file) and laid over the answers.
 const APP = new URL('./', self.location).pathname.replace(/\/$/, ''); // e.g. /nuvolve/app
-const VERSION = 'mvy8xq1q';
+const VERSION = 'mvyf9web';
 const TODAY = '2026-11-02'; // the demo company's "today": the day it was recorded
-const DATA = '2026-11-02T19:49:33.015Z'; // when it was recorded; a new recording starts every browser's changes over
+const DATA = '2026-11-02T22:46:53.376Z'; // when it was recorded; a new recording starts every browser's changes over
 const O = self.DemoOverlay;
 const SESSION = 'nv-demo-session';
 const EMAILS = { 'owner@demo.com': 'owner', 'office@demo.com': 'office', 'manager@demo.com': 'manager', 'mike@demo.com': 'tech', 'sales@demo.com': 'sales' };

@@ -5089,6 +5089,8 @@ NV.settingsTab({ key: 'records', label: 'Pesticide records', render: async (box)
       <p class="small muted">Restricted-use products always need the certified applicator, the lot number, the amount, where it went, the target pest, and the wind when applied outside. These add more.</p>
       <label class="check"><input type="checkbox" name="records_require_lot" ${s.records_require_lot === '1' ? 'checked' : ''}> Every product needs a lot number</label>
       <label class="check"><input type="checkbox" name="records_require_wind" ${s.records_require_wind === '1' ? 'checked' : ''}> Wind is required for every outdoor application</label>
+      <label class="check"><input type="checkbox" name="records_state_strict" ${B().state_records?.strict ? 'checked' : ''}> Hold a stop until the state's record is complete</label>
+      <div class="hint">Each stop follows the record rules of the state its address is in (your company's state when the address has none). Off: the tech sees what's missing and the office gets a warning. On: the stop can't be finished until it's filled in. <a href="#/records-states">See every state's rules</a>.</div>
       <div class="row" style="margin-top:12px"><div class="field"><label>County you work in</label><input name="records_county" value="${esc(s.records_county)}" placeholder="Orange">
           <div class="hint">For the California monthly report. Branches and addresses can have their own.</div></div>
         <div class="field"><label>Operator ID or permit number</label><input name="records_operator_id" value="${esc(s.records_operator_id)}"><div class="hint">California prints it on the monthly report.</div></div></div>
@@ -5107,7 +5109,7 @@ NV.settingsTab({ key: 'records', label: 'Pesticide records', render: async (box)
     e.preventDefault();
     const b = formData(e.target);
     try {
-      await api('/nuvolve/app/api/settings', { method: 'PUT', body: { ...b, records_require_lot: b.records_require_lot ? '1' : '0', records_require_wind: b.records_require_wind ? '1' : '0' } });
+      await api('/nuvolve/app/api/settings', { method: 'PUT', body: { ...b, records_require_lot: b.records_require_lot ? '1' : '0', records_require_wind: b.records_require_wind ? '1' : '0', records_state_strict: b.records_state_strict ? '1' : '0' } });
       await refreshBoot(); toast('Saved');
     } catch (err) { toast(err.message, true); }
   };
@@ -5135,11 +5137,16 @@ NV.slot('stock.receive', () => `<div class="row"><div class="field"><label>Lot #
 NV.slot('property.form', ({ p }) => `<div class="field"><label>County</label><input name="county" maxlength="60" value="${esc(p.county || '')}" placeholder="For state pesticide reports"></div>`);
 
 // ---------- state exports ----------
-const STATES = [['tx', 'Texas (TDA)'], ['fl', 'Florida (FDACS)'], ['ca', 'California (DPR monthly report)'], ['all', 'Every field (any state)']];
+// Texas, Florida and California first (their own layouts), then every state and DC from the state library.
+const STATE_MARK = { partial: ' (partly checked)', needs_verification: ' (needs verification)' };
+const STATES_FIXED = [['tx', 'Texas (TDA)'], ['fl', 'Florida (FDACS)'], ['ca', 'California (DPR monthly report)']];
+const stateList = () => [...STATES_FIXED, ...(B().state_records?.states || []).filter((x) => !STATES_FIXED.some((f) => f[0] === x.code))
+  .map((x) => [x.code, `${x.name}${STATE_MARK[x.status] || ''}`]), ['all', 'Every field (any state)']];
 NV.nav({ href: '#/records', icon: '🏛️', label: 'State records', after: '#/reports' });
 NV.page('records', async (view, _id, params) => {
-  const st = B().settings?.state;
-  const state = STATES.some((s) => s[0] === params.state) ? params.state : ({ TX: 'tx', FL: 'fl', CA: 'ca' }[String(st || '').toUpperCase()] || 'all');
+  const STATES = stateList();
+  const st = String(B().state_records?.company_state || B().settings?.state || '').toLowerCase();
+  const state = STATES.some((s) => s[0] === params.state) ? params.state : (STATES.some((s) => s[0] === st) ? st : 'all');
   const lastMonth = addDays(todayStr().slice(0, 8) + '01', -1).slice(0, 7);
   const p = { state, from: params.from || todayStr().slice(0, 8) + '01', to: params.to || todayStr(), month: params.month || lastMonth,
     location_id: params.location_id || '', applicator_id: params.applicator_id || '', county: params.county || '' };
@@ -5150,6 +5157,8 @@ NV.page('records', async (view, _id, params) => {
   const pill = (n, label, bad) => `<span class="pill ${n && bad ? 'red' : n ? 'green' : ''}">${n} ${esc(label)}</span>`;
   view.innerHTML = `<div class="page-head"><div><h1>State pesticide records</h1><div class="muted">${esc(d.format.title)}</div></div>
       <div class="actions"><a class="btn" href="/nuvolve/app/api/records/export?${q}&format=print" target="_blank" rel="noopener">🖨️ Print</a><a class="btn primary" href="/nuvolve/app/api/records/export?${q}&format=csv">Download CSV</a></div></div>
+    ${d.format.status === 'partial' ? `<div class="alert warn">${esc(`Only part of ${d.format.name}'s rule could be read online, so the state may ask for more than these columns.`)} <a href="#/records-states?state=${esc(state)}">See what we found</a></div>`
+      : d.format.status === 'needs_verification' ? `<div class="alert warn">${esc(`${d.format.name}'s current rule could not be read online. These columns are the federal restricted-use minimum plus common fields: check with the state before you rely on them.`)} <a href="#/records-states?state=${esc(state)}">See what we found</a></div>` : ''}
     <div class="card"><div class="row" id="rx-f">
       <div class="field"><label>Format</label><select name="state">${STATES.map(([k, l]) => `<option value="${k}" ${k === state ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></div>
       ${state === 'ca' ? `<div class="field"><label>Month</label><input type="month" name="month" value="${esc(p.month)}"></div>
@@ -5158,7 +5167,7 @@ NV.page('records', async (view, _id, params) => {
       ${branches.length > 1 ? `<div class="field"><label>Branch</label><select name="location_id"><option value="">Every branch</option>${branches.map((l) => `<option value="${l.id}" ${String(l.id) === p.location_id ? 'selected' : ''}>${esc(l.name)}</option>`).join('')}</select></div>` : ''}
       <div class="field"><label>Applicator</label><select name="applicator_id"><option value="">Everyone</option>${RECS().people.map((u) => `<option value="${u.id}" ${String(u.id) === p.applicator_id ? 'selected' : ''}>${esc(u.name)}</option>`).join('')}</select></div>
     </div>
-    <div class="rec-checks">${pill(c.applications, 'applications')}${pill(c.restricted, 'restricted use')}${pill(c.missing_lot, 'restricted without a lot', true)}${pill(c.expired_lot, 'expired lots', true)}${pill(c.missing_license, 'without a license number', true)}${pill(c.missing_wind, 'outdoor restricted without wind', true)}</div>
+    <div class="rec-checks">${pill(c.applications, 'applications')}${pill(c.restricted, 'restricted use')}${pill(c.missing_lot, 'restricted without a lot', true)}${pill(c.expired_lot, 'expired lots', true)}${pill(c.missing_license, 'without a license number', true)}${pill(c.missing_wind, 'outdoor restricted without wind', true)}${c.device_only ? pill(c.device_only, 'device-only stops') : ''}${pill(c.missing_amount || 0, 'without the total applied', true)}${pill(c.missing_target || 0, 'without a target pest', true)}</div>
     ${state === 'ca' ? d.reports.map((r) => `<h3>${esc(r.county || 'County not set')}${r.county_no ? ` (${esc(r.county_no)})` : ''} · ${r.negative ? 'No pesticides used (negative report)' : `${r.total} applications`}</h3>
         ${r.lines.length ? `<div class="table-wrap"><table class="list small"><thead><tr>${d.format.columns.map((x) => `<th>${esc(x[0])}</th>`).join('')}</tr></thead><tbody>${r.lines.map((x) => `<tr>${d.format.columns.map((col) => `<td>${esc(x[col[1]])}</td>`).join('')}</tr>${x.warning ? `<tr><td colspan="${d.format.columns.length}" class="small" style="color:var(--warn)">⚠ ${esc(x.warning)}</td></tr>` : ''}`).join('')}</tbody></table></div>` : ''}`).join('')
       : d.rows.length ? `<div class="table-wrap"><table class="list small"><thead><tr>${d.columns.map((x) => `<th>${esc(x)}</th>`).join('')}</tr></thead><tbody>${d.rows.slice(0, 200).map((r) => `<tr>${r.map((x) => `<td>${esc(x)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>
@@ -5174,7 +5183,7 @@ NV.page('records', async (view, _id, params) => {
 NV.on('page', ({ name, view }) => {
   if (name !== 'reports') return;
   const actions = $('.card .actions', view);
-  if (actions && !$('#rec-state-link', actions)) actions.insertAdjacentHTML('afterbegin', '<a class="btn sm" id="rec-state-link" href="#/records">🏛️ State formats (TX, FL, CA)</a>');
+  if (actions && !$('#rec-state-link', actions)) actions.insertAdjacentHTML('afterbegin', '<a class="btn sm" id="rec-state-link" href="#/records">🏛️ State formats (all 50 states and DC)</a>');
 });
 
 })(); } catch (e) { console.error('feature records.js failed to load', e); }
@@ -6449,6 +6458,259 @@ try { (function () {
 
 })(); } catch (e) { console.error('feature selfserve.js failed to load', e); }
 
+/* ---- features/state-records.js ---- */
+try { (function () {
+// The state's record words on the ticket, one tap each: areas treated (outside, inside, commercial), methods,
+// target pests and application equipment, from the state the stop is in (src/state-records-data.js). What was used
+// at this address before comes first, with "Same as last time" to fill it all in, and each product picked fills in
+// its method, where it went and the target pest from the last time it was used here. A short list under the ticket
+// shows what the state's record still needs before the stop is finished.
+//
+// The words that go on the record stay English (the state reads them); a Spanish-speaking tech reads them in Spanish
+// on the buttons (src/lang/es/state-records.js).
+(function () {
+  const T = (s, v) => NV.t(s, v);
+  let BOOTD = null;
+  NV.on('boot', ({ boot }) => { BOOTD = boot; });
+  const B = () => (typeof BOOT !== 'undefined' && BOOT) || BOOTD || {};
+  const SIDE = [['exterior', 'Outside'], ['interior', 'Inside'], ['commercial', 'Commercial']];
+  const FIRST = 10;   // chips shown before "More"
+  const css = document.createElement('style');
+  css.textContent = `
+    .sr-box{margin-top:8px}.sr-box .chips{gap:6px}.sr-head{display:flex;justify-content:space-between;align-items:center;gap:8px;margin:8px 0 4px;font-size:13px}
+    .sr-tabs{display:flex;gap:4px;margin:6px 0}.sr-tabs button{flex:1;min-height:40px}.sr-tabs button.on{background:var(--brand);color:#fff;border-color:transparent}
+    .sr-more[hidden]{display:none}.sr-chip.on{color:#fff}.sr-last{display:block;width:100%;text-align:left;white-space:normal;line-height:1.3;margin:6px 0}
+    .sr-filled{font-size:12px;color:var(--brand-dark);margin-top:4px}.sr-need{margin-top:10px;padding:8px 10px;border-radius:8px;border:1px solid var(--line);font-size:14px;line-height:1.4}
+    .sr-need.ok{border-color:#9ae6b4;background:#f0fff4}.sr-need.todo{border-color:#f6e05e;background:#fffbea}.sr-need ul{margin:4px 0 0;padding-left:18px}
+    .sr-src{font-size:11px;color:var(--muted,#666);margin-top:4px}`;
+  document.head.appendChild(css);
+
+  const split = (s) => String(s || '').split(',').map((x) => x.trim()).filter(Boolean);
+  const has = (box, term) => split(box.value).some((x) => x.toLowerCase() === term.toLowerCase());
+  function toggle(box, term) {
+    const list = split(box.value);
+    const i = list.findIndex((x) => x.toLowerCase() === term.toLowerCase());
+    if (i >= 0) list.splice(i, 1); else list.push(term);
+    box.value = list.join(', ');
+    box.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+  const chip = (term, on) => `<button type="button" class="chip sr-chip${on ? ' on' : ''}" data-term="${esc(term)}">${esc(T(term))}</button>`;
+  // A row of chips that add and take out words in a comma list.
+  function chipRow(box, terms, wrapClass = '') {
+    const first = terms.slice(0, FIRST), rest = terms.slice(FIRST);
+    return `<div class="chips quick ${wrapClass}">${first.map((x) => chip(x, has(box, x))).join('')}
+      ${rest.length ? `<span class="sr-more" hidden>${rest.map((x) => chip(x, has(box, x))).join('')}</span><button type="button" class="chip sr-more-btn">${esc(T('More'))} (${rest.length})</button>` : ''}</div>`;
+  }
+  function wireChips(wrap, box) {
+    const sync = () => $$('.sr-chip', wrap).forEach((c) => c.classList.toggle('on', has(box, c.dataset.term)));
+    wrap.addEventListener('click', (e) => {
+      const c = e.target.closest('.sr-chip');
+      if (c) { toggle(box, c.dataset.term); sync(); return; }
+      const m = e.target.closest('.sr-more-btn');
+      if (m) { const more = m.previousElementSibling; more.hidden = !more.hidden; m.textContent = more.hidden ? `${T('More')} (${$$('.sr-chip', more).length})` : T('Fewer'); }
+    });
+    box.addEventListener('input', sync);
+    return sync;
+  }
+
+  // ---------- areas treated ----------
+  function areasBlock(root, visit, terms) {
+    const box = $('#areas', root);
+    if (!box || $('.sr-areas', root)) return;
+    const mem = terms.remembered || {};
+    const side = visit.customer_type === 'commercial' ? 'commercial' : 'exterior';
+    const wrap = document.createElement('div');
+    wrap.className = 'sr-box sr-areas';
+    const lastAll = [...(mem.last?.areas || [])];
+    wrap.innerHTML = `${lastAll.length ? `<button type="button" class="btn sr-last" id="sr-same">↺ ${esc(T('Same as last time here: {areas}', { areas: lastAll.slice(0, 6).map((x) => T(x)).join(', ') + (lastAll.length > 6 ? '…' : '') }))}</button>` : ''}
+      ${mem.areas?.length ? `<div class="sr-head"><b>★ ${esc(T('Used here before'))}</b></div>${chipRow(box, mem.areas, 'sr-mem')}` : ''}
+      <div class="sr-tabs">${SIDE.map(([k, l]) => `<button type="button" class="btn sm${k === side ? ' on' : ''}" data-side="${k}">${esc(T(l))}</button>`).join('')}</div>
+      ${SIDE.map(([k]) => `<div data-list="${k}" ${k === side ? '' : 'hidden'}>${chipRow(box, terms.sites[k] || [])}</div>`).join('')}`;
+    (box.nextElementSibling?.classList.contains('ts-quick') ? box.nextElementSibling : box).after(wrap);
+    const sync = wireChips(wrap, box);
+    $$('[data-side]', wrap).forEach((b) => (b.onclick = () => {
+      $$('[data-side]', wrap).forEach((x) => x.classList.toggle('on', x === b));
+      $$('[data-list]', wrap).forEach((x) => { x.hidden = x.dataset.list !== b.dataset.side; });
+    }));
+    if ($('#sr-same', wrap)) $('#sr-same', wrap).onclick = (e) => {
+      for (const a of lastAll) if (!has(box, a)) toggle(box, a);
+      const pests = new Set(mem.last?.pests || []);
+      $$('#pests .chip', root).forEach((c) => { if (pests.has(c.dataset.v)) c.classList.add('on'); });
+      const eq = $('#sr-equipment', root);
+      if (eq && !eq.value && mem.last?.equipment?.length) { eq.value = mem.last.equipment.join(', '); eq.dispatchEvent(new Event('input', { bubbles: true })); }
+      e.currentTarget.classList.add('primary');
+      sync();
+    };
+  }
+
+  // ---------- each product line: what it was last time here ----------
+  function fillLineFromMemory(row, terms) {
+    const pid = Number($('.p-id', row)?.value);
+    const l = pid && terms.remembered?.lines?.[pid];
+    $('.sr-filled', row)?.remove();
+    if (!l) return;
+    const set = (sel, v) => { const el = $(sel, row); if (el && v != null && v !== '' && !el.value) { el.value = v; el.dispatchEvent(new Event('change', { bubbles: true })); return true; } return false; };
+    let n = 0;
+    n += set('.r-method', l.method); n += set('.r-site', l.site_type); n += set('.p-area', l.area); n += set('.r-target', l.target);
+    n += set('.r-size', l.size); if (l.size != null) set('.r-size-unit', l.size_unit);
+    if (!n) return;
+    if ((l.target || l.size) && $('.rec-more', row)) $('.rec-more', row).open = true;
+    $('.rec-line', row)?.insertAdjacentHTML('beforeend', `<div class="sr-filled">↺ ${esc(T('Filled in from the last time {product} was used here. Check it matches today.', { product: $('.p-id', row).selectedOptions[0]?.textContent || '' }))}</div>`);
+  }
+  // A method's meaning on hover, and every state word in the list (older tickets' words stay too).
+  function methodOptions(row, terms) {
+    const sel = $('.r-method', row);
+    if (!sel || sel.dataset.sr) return;
+    sel.dataset.sr = '1';
+    const have = new Set([...sel.options].map((o) => o.value));
+    for (const m of terms.methods) if (!have.has(m.term)) sel.add(new Option(T(m.term), m.term));
+    for (const o of sel.options) { const m = terms.methods.find((x) => x.term === o.value); if (m) o.title = m.means; }
+  }
+
+  // ---------- equipment ----------
+  function equipmentBlock(root, terms) {
+    const after = $('#weather', root)?.closest('.field');
+    if (!after || $('#sr-equipment', root)) return;
+    const st = terms.state;
+    const needed = st && (st.required.includes('equipment') || 'equipment' in st.when);
+    const mem = terms.remembered?.equipment || [];
+    const list = [...mem, ...terms.equipment.filter((x) => !mem.includes(x))];
+    after.insertAdjacentHTML('afterend', `<div class="field"><label for="sr-equipment">${esc(T('Application equipment'))}${needed ? ` <span class="small muted">· ${esc(T('{state} record', { state: st.name }))}</span>` : ''}</label>
+      <input id="sr-equipment" maxlength="200" placeholder="${esc(T('Backpack sprayer, bait gun...'))}"><div class="sr-box sr-eq"></div></div>`);
+    const box = $('#sr-equipment', root);
+    $('.sr-eq', root).innerHTML = chipRow(box, list);
+    wireChips($('.sr-eq', root), box);
+  }
+
+  // ---------- what the state's record still needs ----------
+  const LIQ = ['gal', 'qt', 'fl oz', 'L', 'ml'];
+  function needs(root, terms) {
+    const st = terms.state;
+    if (!st) return [];
+    const need = new Set(st.required);
+    const rules = st.rules || {};
+    const M = Object.fromEntries(terms.methods.map((m) => [m.term, m]));
+    const out = [];
+    const areas = $('#areas', root)?.value.trim();
+    const pests = $$('#pests .chip.on', root).length;
+    const w = { mph: $('#rec-wind', root)?.value, dir: $('#rec-dir', root)?.value, temp: $('#rec-temp', root)?.value };
+    let anyLine = false;
+    for (const row of $$('#prod-rows .prod-row', root)) {
+      const sel = $('.p-id', row);
+      if (!Number(sel?.value)) continue;
+      anyLine = true;
+      const name = sel.selectedOptions[0]?.textContent.replace(/\s*\(EPA.*\)$/, '') || '';
+      const p = (B().products || []).find((x) => x.id === Number(sel.value)) || {};
+      const method = $('.r-method', row)?.value, site = $('.r-site', row)?.value, m = M[method] || {};
+      if (need.has('method') && !method) out.push(T('Method for {product}', { product: name }));
+      if (need.has('site') && !$('.p-area', row)?.value.trim() && !areas) out.push(T('Areas treated for {product}', { product: name }));
+      if (need.has('target_pest') && !$('.r-target', row)?.value.trim() && !pests) out.push(T('Target pest for {product}', { product: name }));
+      if (need.has('size') && !$('.r-size', row)?.value && !m.size_exempt && !(rules.size_exempt_cc && site === 'inside')) out.push(T('Size treated for {product}', { product: name }));
+      if ((need.has('mix') || need.has('concentration') || need.has('applied')) && !p.rtu && !$('.r-vol', row)?.value && !$('.r-tank', row)?.value && !$('.p-rate', row)?.value.trim()
+        && LIQ.includes($('.p-unit', row)?.value)) out.push(T('What {product} was mixed in', { product: name }));
+      const outdoor = ['outside', 'both'].includes(site);
+      const exempt = m.no_wind || (rules.wind_exempt_structural && (site === 'inside' || m.size_exempt));
+      if (need.has('weather') && outdoor && !exempt && !(w.mph !== '' && w.mph != null && (Number(w.mph) === 0 || w.dir))) out.push(T('Wind speed and direction'));
+    }
+    if (need.has('equipment') && anyLine && !$('#sr-equipment', root)?.value.trim()) out.push(T('Application equipment'));
+    return [...new Set(out)];
+  }
+  function needsBox(root, terms) {
+    const st = terms.state;
+    const btn = $('#complete', root);
+    if (!st || !btn || $('.sr-need', root)) return;
+    btn.insertAdjacentHTML('beforebegin', '<div class="sr-need" role="status" aria-live="polite"></div>');
+    const box = $('.sr-need', root);
+    const draw = () => {
+      const left = needs(root, terms);
+      const anyLine = $$('#prod-rows .p-id', root).some((s) => Number(s.value));
+      box.hidden = !anyLine;
+      box.className = `sr-need ${left.length ? 'todo' : 'ok'}`;
+      box.innerHTML = left.length ? `<b>${esc(T('{state} record still needs:', { state: st.name }))}</b><ul>${left.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>`
+        : `✓ <b>${esc(T('{state} record is complete.', { state: st.name }))}</b>`;
+      if (st.status !== 'verified') box.insertAdjacentHTML('beforeend', `<div class="sr-src">${esc(T("Some of {state}'s rule couldn't be checked online. The office has the details.", { state: st.name }))}</div>`);
+    };
+    let t;
+    const soon = () => { clearTimeout(t); t = setTimeout(draw, 120); };
+    root.addEventListener('input', soon);
+    root.addEventListener('change', soon);
+    root.addEventListener('click', soon);
+    draw();
+  }
+
+  const TERMS = new WeakMap();   // ticket root -> the visit's terms
+  NV.on('ticket.rendered', ({ root, visit }) => {
+    const terms = visit.rec_terms;
+    if (!terms || !$('#areas', root)) return;
+    TERMS.set(root, terms);
+    // Every state word in the target pest list.
+    const dl = $('#rec-pests', root);
+    if (dl) {
+      const have = new Set([...dl.options].map((o) => o.value));
+      dl.insertAdjacentHTML('beforeend', [...(terms.remembered?.pests || []), ...terms.pests].filter((p) => !have.has(p) && have.add(p)).map((p) => `<option value="${esc(p)}">${esc(T(p))}</option>`).join(''));
+    }
+    // The state's words replace the tech app's short list of area picks (src/features/tech-speed.js skips it).
+    setTimeout(() => { areasBlock(root, visit, terms); needsBox(root, terms); }, 0);
+    equipmentBlock(root, terms);
+    const rows = $('#prod-rows', root);
+    const each = () => $$('.prod-row', rows).forEach((r) => methodOptions(r, terms));
+    setTimeout(each, 0);
+    new MutationObserver(() => setTimeout(each, 0)).observe(rows, { childList: true });
+    // A product picked: after the record fields set themselves up, bring back what it was last time here.
+    rows.addEventListener('change', (e) => { if (e.target.matches('.p-id')) setTimeout(() => fillLineFromMemory(e.target.closest('.prod-row'), terms), 0); });
+  });
+  NV.on('ticket.draft', ({ root, draft }) => { const eq = $('#sr-equipment', root); if (eq && draft?.rec_equipment) eq.value = draft.rec_equipment; });
+  NV.collector('ticket', (root) => { const eq = root && $('#sr-equipment', root); return eq ? { rec_equipment: eq.value.trim() } : {}; });
+  // A company that holds stops to the state's record gets told before the tap goes to the server.
+  NV.check('ticket', (_body, { root } = {}) => {
+    const terms = root && TERMS.get(root);
+    if (!terms?.state || !B().state_records?.strict) return null;
+    const left = needs(root, terms);
+    return left.length ? T('{state} record still needs: {list}', { state: terms.state.name, list: left.join(', ') }) : null;
+  });
+  NV.on('ticket.saved', ({ result }) => {
+    const w = result?.state_record_warnings;
+    if (w?.length) setTimeout(() => toast(T('Saved. The office will see: {msg}', { msg: w.slice(0, 2).join(' ') }), true), 3400);
+  });
+})();
+
+// ---------- the office: every state's rules on one page ----------
+(function () {
+  if (/^\/tech/.test(location.pathname) || typeof NV.page !== 'function') return;
+  const STATUS = { verified: ['green', 'Checked against the rule'], partial: ['', 'Partly checked'], needs_verification: ['red', 'Needs verification'] };
+  NV.page('records-states', async (view, _id, params) => {
+    const d = await api('/nuvolve/app/api/records/states');
+    const code = String(params.state || '').toLowerCase();
+    const st = d.states.find((x) => x.code === code);
+    const field = (k) => (d.fields[k] || [k])[0];
+    const head = `<div class="page-head"><div><h1>State pesticide record rules</h1><div class="muted">What each state asks you to record for every application, and the words techs pick from. Each stop follows the state its address is in.</div></div>
+      <div class="actions"><a class="btn" href="#/records">🏛️ State records</a></div></div>`;
+    if (st) {
+      const [cls, label] = STATUS[st.status];
+      view.innerHTML = `${head}<div class="card" style="max-width:900px"><div class="card-head"><div><h2>${esc(st.name)}</h2><div class="small muted">${esc(st.agency)}</div></div>
+          <span class="pill ${cls}">${esc(label)}</span></div>
+        <p><b>Rule:</b> ${esc(st.cite)} · <a href="${esc(st.url)}" target="_blank" rel="noopener">Source</a><br><b>Keep records:</b> ${esc(st.retention)}</p>
+        <h3>Every record needs</h3><ul>${st.req.map((k) => `<li>${esc(field(k))}</li>`).join('')}</ul>
+        ${Object.keys(st.when || {}).length ? `<h3>Sometimes</h3><ul>${Object.entries(st.when).map(([k, w]) => `<li>${esc(field(k))}: ${esc(w)}</li>`).join('')}</ul>` : ''}
+        ${st.notes ? `<h3>Notes</h3><p>${esc(st.notes)}</p>` : ''}
+        <p><a class="btn sm" href="#/records?state=${esc(st.code === 'ca' ? 'ca' : st.code)}">Records in ${esc(st.name)}'s layout</a> <a class="btn sm" href="#/records-states">Every state</a></p></div>`;
+      return;
+    }
+    view.innerHTML = `${head}<div class="card"><div class="table-wrap"><table class="list"><thead><tr><th>State</th><th>Rule</th><th>Keep</th><th>Fields</th><th>Status</th></tr></thead><tbody>
+      ${d.states.map((x) => `<tr><td><a href="#/records-states?state=${esc(x.code)}"><b>${esc(x.name)}</b></a></td><td class="small">${esc(x.cite)}</td><td class="small">${esc(x.retention)}</td>
+        <td>${x.req.length}</td><td><span class="pill ${STATUS[x.status][0]}">${esc(STATUS[x.status][1])}</span></td></tr>`).join('')}</tbody></table></div></div>
+      <div class="card" style="max-width:900px"><h2>The words on the ticket</h2>
+        <h3>Methods of application</h3><ul class="small">${d.methods.map((m) => `<li><b>${esc(m.term)}</b>: ${esc(m.means)}${m.src ? ` <span class="muted">(${esc(m.src)})</span>` : ''}</li>`).join('')}</ul>
+        <h3>Areas treated</h3><p class="small muted">${esc(d.site_source)}</p>
+        ${Object.entries(d.sites).map(([k, list]) => `<p class="small"><b>${esc({ exterior: 'Outside', interior: 'Inside', commercial: 'Commercial' }[k] || k)}:</b> ${list.map(esc).join(', ')}</p>`).join('')}
+        <h3>Size of area</h3><p class="small">${d.size_terms.map(esc).join(', ')}</p>
+        <h3>Target pests</h3><p class="small">${d.pests.map(esc).join(', ')}</p>
+        <h3>Application equipment</h3><p class="small">${d.equipment.map(esc).join(', ')}</p></div>`;
+  });
+})();
+
+})(); } catch (e) { console.error('feature state-records.js failed to load', e); }
+
 /* ---- features/tcpa.js ---- */
 try { (function () {
 // Texting compliance (TCPA and A2P 10DLC) in the browser: consent on the customer page, the new customer and edit
@@ -6794,6 +7056,281 @@ NV.settingsTab({ key: 'texting', label: 'Texting compliance', render: async (box
 } });
 
 })(); } catch (e) { console.error('feature tcpa.js failed to load', e); }
+
+/* ---- features/tech-speed.js ---- */
+try { (function () {
+// The ticket at the door, built for thumbs: big tap targets, quick picks and the phone's microphone instead of typing,
+// the weather from the tech's last stop, the customer's name as the signer, a one-tap finished-mix size, the label's PPE,
+// re-entry time and posting on each product, and a reason box when the server refuses a rate over the label.
+//
+// Only runs in the tech app (/nuvolve/app/tech). What a tech reads goes through NV.t (Spanish in src/lang/es/tech-speed.js).
+// Phrases that land in the customer's notes are written in the customer's language; areas treated and the weather go
+// on the pesticide record and are written in English.
+(function () {
+  if (!/^\/tech/.test(location.pathname)) return;
+  const t = (text, vars) => NV.t(text, vars);
+  const store = {
+    get: (k) => { try { return JSON.parse(localStorage.getItem(k) || 'null'); } catch { return null; } },
+    set: (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* private mode or full */ } },
+  };
+  let BOOTD = null;
+  NV.on('boot', ({ boot }) => { BOOTD = boot; });
+  const prodOf = (id) => (BOOTD?.products || []).find((p) => p.id === Number(id)) || null;
+
+  const css = document.createElement('style');
+  css.textContent = `
+    #app .chip, .modal .chips.quick .chip { min-height: 44px; padding: 10px 14px; font-size: 15px; display: inline-flex; align-items: center; }
+    #app .chips.quick .chip, .modal .chips.quick .chip { font: inherit; font-size: 15px; color: inherit; }
+    #app .chips.quick .chip.on, .modal .chips.quick .chip.on { color: #fff; }
+    #ticket .btn, #app .card .btn.block, #app .bigbtns .btn { min-height: 44px; }
+    #ticket .btn.sm { padding: 10px 14px; font-size: 15px; }
+    #app input[type=checkbox] { width: 24px; height: 24px; flex: 0 0 24px; }
+    #app label.check { min-height: 44px; font-size: 16px; }
+    #app .link-btn { padding: 10px 4px; min-height: 44px; }
+    .seg.big-seg { display: flex; width: 100%; }
+    .seg.big-seg button { flex: 1; min-height: 52px; font-size: 17px; }
+    .ts-quick { margin-top: 8px; }
+    .ts-quick .chips { gap: 8px; }
+    .ts-mic { margin-left: 8px; min-height: 40px; }
+    .ts-mic.on { background: var(--danger, #c53030); color: #fff; border-color: transparent; }
+    .ts-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+    .ts-safety { margin: 6px 0; padding: 8px 10px; border-radius: 8px; background: #fffbea; border: 1px solid #f6e05e; font-size: 14px; line-height: 1.35; }
+    .ts-safety:empty { display: none; }
+    .ts-mixq { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 8px; font-size: 14px; }
+    .ts-mixq > span { grid-column: 1 / -1; }
+    #app .ts-mixq .chip { justify-content: center; padding: 8px 4px; }
+    .ts-mixq[hidden] { display: none; }
+    .ts-last { display: block; width: 100%; text-align: left; margin-top: 8px; white-space: normal; line-height: 1.3; padding: 10px 14px; }
+    .clock-card.nudge { border: 2px solid var(--brand); }
+    html[data-tech-theme="sun"] .ts-safety { background: #fff3b0; border: 2px solid #000; color: #000; }`;
+  document.head.appendChild(css);
+
+  // ---------- quick picks ----------
+  // Each pick: what the tech reads on the button (en/es) and what goes in the box (en/es, by whose language it is).
+  const NOTE_PICKS = [
+    { en: 'Treated the outside perimeter of the home.', es: 'Tratamos el perímetro exterior de la casa.', label: 'Outside perimeter' },
+    { en: 'Knocked down webs and wasp nests along the eaves.', es: 'Quitamos telarañas y nidos de avispas de los aleros.', label: 'Webs and nests' },
+    { en: 'Treated inside along baseboards, the kitchen and bathrooms.', es: 'Tratamos adentro los zócalos, la cocina y los baños.', label: 'Inside treatment' },
+    { en: 'Put out ant bait where we saw trails.', es: 'Pusimos cebo para hormigas donde vimos caminos.', label: 'Ant bait' },
+    { en: 'Treated doors, windows and other entry points.', es: 'Tratamos puertas, ventanas y otras entradas.', label: 'Entry points' },
+    { en: 'Checked inside: no activity seen.', es: 'Revisamos adentro: no vimos actividad.', label: 'No activity inside' },
+    { en: 'Checked and serviced the bait stations.', es: 'Revisamos y atendimos las estaciones de cebo.', label: 'Bait stations' },
+    { en: 'Please stay off treated areas until they are dry.', es: 'Por favor no pise las áreas tratadas hasta que estén secas.', label: 'Stay off until dry' },
+  ];
+  const AREA_PICKS = [
+    ['Exterior perimeter', 'Outside perimeter'], ['Eaves', 'Eaves'], ['Doors and windows', 'Doors and windows'], ['Garage', 'Garage'],
+    ['Kitchen', 'Kitchen'], ['Bathrooms', 'Bathrooms'], ['Interior baseboards', 'Inside baseboards'], ['Yard', 'Yard'],
+    ['Fence line', 'Fence line'], ['Attic', 'Attic'], ['Crawlspace', 'Crawlspace'],
+  ];
+  const OFFICE_PICKS = ['Dog in the yard', 'Gate code changed', 'Wants a quote for more service', 'Heavy activity: book a follow-up', 'Customer not happy: please call'];
+  const SKY_PICKS = [['Sunny', 'Sunny'], ['Partly cloudy', 'Partly cloudy'], ['Cloudy', 'Cloudy'], ['Light rain', 'Light rain']];
+
+  const has = (box, text) => box.value.toLowerCase().includes(text.toLowerCase());
+  // Adds or takes out a phrase, keeping what the tech typed around it.
+  function togglePhrase(box, text, sep) {
+    if (has(box, text)) {
+      box.value = box.value.split(text).join('').replace(/\s*,\s*,/g, ',').replace(/\s{2,}/g, ' ').replace(/^[\s,]+|[\s,]+$/g, '');
+    } else {
+      const cur = box.value.trim();
+      box.value = cur ? `${cur.replace(sep === ', ' ? /,\s*$/ : /\s*$/, '')}${sep}${text}` : text;
+    }
+    box.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+  function quickRow(box, picks, sep) {
+    const wrap = document.createElement('div');
+    wrap.className = 'ts-quick';
+    wrap.innerHTML = `<div class="chips quick">${picks.map((p, i) => `<button type="button" class="chip" data-i="${i}">${esc(p.label)}</button>`).join('')}</div>`;
+    const sync = () => $$('.chip', wrap).forEach((c) => c.classList.toggle('on', has(box, picks[Number(c.dataset.i)].text)));
+    $$('.chip', wrap).forEach((c) => (c.onclick = () => { togglePhrase(box, picks[Number(c.dataset.i)].text, sep); sync(); }));
+    box.addEventListener('input', sync);
+    box.after(wrap);
+    sync();
+    return wrap;
+  }
+
+  // ---------- talk instead of type ----------
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  function micFor(box, lang) {
+    const label = box.closest('.field')?.querySelector('label');
+    if (!label) return;
+    if (!SR) return;
+    label.classList.add('ts-row');
+    label.insertAdjacentHTML('beforeend', `<button type="button" class="btn sm ts-mic" aria-label="${esc(t('Talk instead of typing'))}">🎤 ${esc(t('Talk'))}</button>`);
+    const btn = label.querySelector('.ts-mic');
+    let rec = null;
+    btn.onclick = (e) => {
+      e.preventDefault();
+      if (rec) { rec.stop(); return; }
+      rec = new SR();
+      rec.lang = lang() === 'es' ? 'es-US' : 'en-US';
+      rec.interimResults = false;
+      rec.onresult = (ev) => {
+        const said = [...ev.results].map((r) => r[0].transcript).join(' ').trim();
+        if (!said) return;
+        const text = said.charAt(0).toUpperCase() + said.slice(1);
+        box.value = box.value.trim() ? `${box.value.trim()} ${text}${/[.!?]$/.test(text) ? '' : '.'}` : `${text}${/[.!?]$/.test(text) ? '' : '.'}`;
+        box.dispatchEvent(new Event('input', { bubbles: true }));
+      };
+      rec.onend = () => { rec = null; btn.classList.remove('on'); btn.textContent = `🎤 ${t('Talk')}`; };
+      rec.onerror = () => toast(t("The microphone didn't catch that. Try again, or use the mic on your keyboard."), true);
+      try { rec.start(); btn.classList.add('on'); btn.textContent = `⏹ ${t('Stop')}`; } catch { rec = null; }
+    };
+  }
+
+  // ---------- the label's safety on each product line ----------
+  let SAFETY = store.get('nv_chem_safety') || [];
+  const safetyReady = api('/nuvolve/app/api/products/safety').then((list) => { SAFETY = list; store.set('nv_chem_safety', list); }).catch(() => {});
+  function safetyHtml(p) {
+    const s = SAFETY.find((x) => x.id === p?.id);
+    if (!s) return '';
+    const parts = [];
+    if (s.ppe) parts.push(`🧤 <b>${esc(t('PPE'))}:</b> ${esc(s.ppe)}`);
+    if (s.rei_hours) parts.push(`⏳ ${esc(t('Keep people and pets out of treated areas for {h} h. Tell the customer.', { h: s.rei_hours }))}`);
+    if (s.posting_required) parts.push(`🪧 ${esc(t('Post the treated area.'))}${s.posting_note ? ` ${esc(s.posting_note)}` : ''}`);
+    return parts.join('<br>');
+  }
+  const MIX_SIZES = [1, 2, 3, 4];
+  function enhanceLine(row) {
+    if (row.dataset.ts) return;
+    row.dataset.ts = '1';
+    const line = row.querySelector('.rec-line');
+    if (!line) { delete row.dataset.ts; return; }
+    line.insertAdjacentHTML('afterbegin', '<div class="ts-safety" role="note"></div>');
+    // The finished mix is part of the record for every mixed product: one tap for the usual tank sizes.
+    line.querySelector('.rec-grid')?.insertAdjacentHTML('afterend', `<div class="ts-mixq"><span>${esc(t('Mixed in'))}:</span>
+      ${MIX_SIZES.map((g) => `<button type="button" class="chip" data-gal="${g}">${esc(t('{n} gal', { n: g }))}</button>`).join('')}</div>`);
+    $$('[data-gal]', row).forEach((b) => (b.onclick = () => {
+      const tank = $('.r-tank', row);
+      if (tank) { tank.value = ''; tank.dispatchEvent(new Event('change', { bubbles: true })); }
+      $('.r-vol', row).value = b.dataset.gal;
+      $('.r-vol-unit', row).value = 'gal';
+      $('.r-vol', row).dispatchEvent(new Event('input', { bubbles: true }));
+      syncLine(row);
+    }));
+    $('.p-id', row).addEventListener('change', () => syncLine(row));
+    $('.r-vol', row)?.addEventListener('input', () => syncLine(row));
+    $('.r-tank', row)?.addEventListener('change', () => syncLine(row));
+    syncLine(row);
+  }
+  function syncLine(row) {
+    const p = prodOf($('.p-id', row)?.value);
+    const box = $('.ts-safety', row);
+    if (box) box.innerHTML = p ? safetyHtml(p) : '';
+    const q = $('.ts-mixq', row);
+    if (!q) return;
+    q.hidden = !p || Boolean(p.rtu);
+    const vol = $('.r-vol', row)?.value, unit = $('.r-vol-unit', row)?.value, tank = $('.r-tank', row)?.value;
+    $$('[data-gal]', q).forEach((c) => c.classList.toggle('on', !tank && unit === 'gal' && Number(vol) === Number(c.dataset.gal)));
+  }
+
+  // ---------- weather ----------
+  // The tech's own last reading, kept on the phone for two hours on the same day. Wind changes, so it's a tap, not a default.
+  const LAST_W = 'nv_last_weather';
+  let pendingWeather = null;
+  function lastWeather() {
+    const w = store.get(LAST_W);
+    if (!w || w.day !== todayStr() || Date.now() - w.at > 2 * 3600 * 1000) return null;
+    if (w.temp_f == null && w.wind_mph == null) return null;
+    return w;
+  }
+  const weatherLine = (w) => [w.temp_f != null ? `${w.temp_f}°F` : null, w.wind_mph != null ? (w.wind_mph === 0 ? t('wind calm') : t('wind {mph} mph {dir}', { mph: w.wind_mph, dir: w.wind_dir || '' }).trim()) : null,
+    w.sky || null].filter(Boolean).join(', ');
+
+  function wireWeather(root) {
+    const temp = $('#rec-temp', root), wind = $('#rec-wind', root), dir = $('#rec-dir', root), sky = $('#weather', root);
+    if (!temp || !wind || !dir || !sky) return;
+    const hint = $('.rec-w', root)?.nextElementSibling;
+    const anchor = hint?.classList.contains('hint') ? hint : $('.rec-w', root);
+    const w = lastWeather();
+    const box = document.createElement('div');
+    box.innerHTML = `${w ? `<button type="button" class="btn ts-last" id="ts-weather">🌤 ${esc(t('Same as my last stop: {weather}', { weather: weatherLine(w) }))}
+        <span class="small" style="display:block;opacity:.85;font-weight:500">${esc(t('{n} min ago', { n: Math.max(1, Math.round((Date.now() - w.at) / 60000)) }))}</span></button>` : ''}
+      <div class="ts-quick"><div class="chips quick"><button type="button" class="chip" id="ts-calm">${esc(t('Wind calm'))}</button>
+        ${SKY_PICKS.map(([v, l]) => `<button type="button" class="chip" data-sky="${esc(v)}">${esc(t(l))}</button>`).join('')}</div></div>`;
+    anchor.after(box);
+    const fire = (el) => el.dispatchEvent(new Event('input', { bubbles: true }));
+    if ($('#ts-weather', root)) $('#ts-weather', root).onclick = (e) => {
+      if (w.temp_f != null) temp.value = w.temp_f;
+      if (w.wind_mph != null) wind.value = w.wind_mph;
+      dir.value = w.wind_dir || '';
+      if (w.sky && !sky.value) sky.value = w.sky;
+      [temp, wind, sky].forEach(fire);
+      dir.dispatchEvent(new Event('change', { bubbles: true }));
+      e.currentTarget.classList.add('primary');
+    };
+    $('#ts-calm', root).onclick = () => { wind.value = 0; dir.value = ''; fire(wind); dir.dispatchEvent(new Event('change', { bubbles: true })); };
+    $$('[data-sky]', root).forEach((c) => (c.onclick = () => { sky.value = c.dataset.sky; fire(sky); $$('[data-sky]', root).forEach((x) => x.classList.toggle('on', x === c)); }));
+  }
+
+  // ---------- the person who signed ----------
+  function wireSigner(root, visit) {
+    const input = $('#pf-signer', root);
+    const name = visit.customer_type === 'commercial' ? '' : (visit.customer_name || '').trim();
+    if (!input || !name) return;
+    input.insertAdjacentHTML('afterend', `<div class="chips quick" style="margin-top:8px"><button type="button" class="chip" id="ts-signer">✍️ ${esc(name)}</button></div>`);
+    $('#ts-signer', root).onclick = (e) => { input.value = name; input.dispatchEvent(new Event('input', { bubbles: true })); e.currentTarget.classList.add('on'); };
+  }
+
+  NV.on('ticket.rendered', ({ root, visit }) => {
+    if (!$('#tnotes', root) || root.dataset.tsWired) return;
+    root.dataset.tsWired = '1';
+    const custLang = () => (visit.customer_lang === 'es' ? 'es' : 'en');
+    const areas = $('#areas', root), notes = $('#tnotes', root), office = $('#inotes', root);
+    // The state's area words come from state-records.js when the stop has them; this short list is the fallback.
+    if (!visit.rec_terms) quickRow(areas, AREA_PICKS.map(([text, label]) => ({ text, label: t(label) })), ', ');
+    quickRow(notes, NOTE_PICKS.map((p) => ({ text: custLang() === 'es' ? p.es : p.en, label: t(p.label) })), ' ');
+    quickRow(office, OFFICE_PICKS.map((p) => ({ text: `${t(p)}.`, label: t(p) })), ' ');
+    micFor(notes, custLang);
+    micFor(office, () => NV.lang);
+    if (!SR) notes.insertAdjacentHTML('afterend', `<div class="hint">${esc(t('Tip: tap the 🎤 on your keyboard to talk instead of type.'))}</div>`);
+    wireWeather(root);
+    wireSigner(root, visit);
+    const rows = $('#prod-rows', root);
+    const all = () => $$('.prod-row', rows).forEach(enhanceLine);
+    // The record fields join each line right after it's added, so wait a beat for them.
+    setTimeout(all, 0);
+    new MutationObserver(() => setTimeout(all, 0)).observe(rows, { childList: true });
+    safetyReady.then(() => $$('.prod-row', rows).forEach(syncLine));
+    // "Fill in from last visit" sets the mix without firing events: light up the matching tank size after it.
+    $('#use-last', root)?.addEventListener('click', () => setTimeout(() => $$('.prod-row', rows).forEach((r) => { enhanceLine(r); syncLine(r); }), 0));
+  });
+  NV.on('ticket.draft', ({ root }) => setTimeout(() => $$('#prod-rows .prod-row', root).forEach(syncLine), 0));
+
+  // ---------- a rate over the label ----------
+  const overrides = new WeakMap(); // ticket root -> { productId: reason }
+  NV.collector('ticket', (root) => {
+    const r = root ? $('#rec-temp', root) : null;
+    if (r) pendingWeather = { temp_f: r.value === '' ? null : Number(r.value), wind_mph: $('#rec-wind', root).value === '' ? null : Number($('#rec-wind', root).value),
+      wind_dir: $('#rec-dir', root).value || null, sky: $('#weather', root).value.trim() || null };
+    const o = root && overrides.get(root);
+    return o ? { label_overrides: o } : {};
+  });
+  NV.on('ticket.saved', () => {
+    if (pendingWeather && (pendingWeather.temp_f != null || pendingWeather.wind_mph != null)) store.set(LAST_W, { ...pendingWeather, day: todayStr(), at: Date.now() });
+  });
+  NV.on('ticket.refused', (ev) => {
+    const over = ev.error?.data?.label_problems?.over || [];
+    if (!over.length || (ev.error.data.label_problems.expired || []).length) return;
+    ev.handled = true;
+    const m = modal(t('Over the label rate'), `<div class="alert warn">${esc(t('Using more than the label allows is against the law unless the label permits it for this site or pest. Fix a typo first. The owner is told about every reason given.'))}</div>
+      ${over.map((x) => `<div class="field"><label>${esc(t('{product}: {used} {unit} per {per}, label max {max}', x))}</label>
+        <textarea name="r${Number(x.product_id)}" maxlength="300" placeholder="${esc(t('Why it was applied this way (at least 10 letters)'))}"></textarea></div>`).join('')}`, [
+      { label: t('Fix the numbers') },
+      { label: t('Save with this reason'), cls: 'primary', onClick: (el) => {
+        const reasons = {};
+        for (const x of over) {
+          const v = $(`[name=r${Number(x.product_id)}]`, el).value.trim();
+          if (v.length < 10) throw new Error(t('Give the reason for {product} in a few words.', { product: x.product }));
+          reasons[x.product_id] = v;
+        }
+        overrides.set(ev.root, reasons);
+        setTimeout(ev.retry, 0);
+      } }]);
+    return m;
+  });
+})();
+
+})(); } catch (e) { console.error('feature tech-speed.js failed to load', e); }
 
 /* ---- features/trust.js ---- */
 try { (function () {

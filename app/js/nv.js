@@ -43,6 +43,8 @@
 //         customer.new.rendered {form}, customer.form.rendered {c, el}, property.form.rendered {c, p, el},
 //         plan.form.rendered {c, p, editing, el},
 //         ticket.rendered {root, visit}, ticket.draft {root, visit, draft}, ticket.saved {visit, result},
+//         ticket.refused {root, visit, error, retry, handled} (the server turned the ticket down: set handled = true to
+//         answer it yourself, error.data has what the server sent, retry() taps Complete again),
 //         tech.route.rendered {r, root}, tech.stop.rendered {v, root}, portal.rendered {data, token, root},
 //         tech.conflicts {} (the tech tapped "See it" on a ticket that needs them, in the sync bar),
 //         book.rendered {d, form}, book.done {d, body, result, root}, book.failed {d, err, form},
