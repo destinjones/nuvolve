@@ -1,0 +1,4 @@
+Contact: mailto:support@nuvolvecrm.com
+Expires: 2027-08-28T00:00:00.000Z
+Policy: /nuvolve/security.html
+Preferred-Languages: en, es

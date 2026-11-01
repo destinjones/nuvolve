@@ -220,6 +220,7 @@ async function dealModal(id, reps, done) {
   const e = d.estimate;
   const open = ['new', 'contacted', 'quoted'].includes(d.stage);
   const m = modal(d.customer_name, `
+    ${homePhoto(d.door || d, 640, 260)}
     <div class="small muted">${esc(d.address || '')}${d.phone ? ` · <a href="tel:${esc(d.phone)}">${esc(d.phone)}</a>` : ''}${d.email ? ` · ${esc(d.email)}` : ''} · ${DEAL_SOURCE[d.source] || ''} · added ${fmtDate(d.created_at)}</div>
     <div class="row" style="margin-top:10px">
       <div class="field"><label>Stage</label><select name="stage">${DEAL_STAGES.map(([k, l]) => `<option value="${k}" ${k === d.stage ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
@@ -247,6 +248,7 @@ async function dealModal(id, reps, done) {
       if (stage !== d.stage) { moveDeal(d, stage, done); return; }
       done();
     } }]);
+  wireHomePhotos(m.el);
   if ($('#dm-copy', m.el)) $('#dm-copy', m.el).onclick = () => copyText(d.link, 'Link copied');
   if ($('#dm-quote', m.el)) $('#dm-quote', m.el).onclick = async () => { m.close(); estimateModal(await api(`/nuvolve/app/api/customers/${d.customer_id}`), done); };
 }
@@ -269,7 +271,7 @@ async function salesDoors(view) {
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 20, maxNativeZoom: 19, attribution: '© OpenStreetMap' }).addTo(doorMap);
   let drawing = null;
   const tLayer = L.layerGroup().addTo(doorMap), cLayer = L.layerGroup().addTo(doorMap), dLayer = L.layerGroup().addTo(doorMap);
-  for (const t of terrs) L.polygon(t.points, { color: t.color, weight: 2, fillOpacity: 0.07 }).addTo(tLayer).bindTooltip(`${t.name}${t.rep_name ? ` · ${t.rep_name}` : ''}`);
+  for (const t of terrs) L.polygon(t.points, { color: t.color, weight: 2, fillOpacity: 0.07 }).addTo(tLayer).bindTooltip(esc(`${t.name}${t.rep_name ? ` · ${t.rep_name}` : ''}`));
   if (terrs[0]) doorMap.fitBounds(L.polygon(terrs[0].points).getBounds());
   const load = async () => {
     if (!doorMap || drawing) return;
@@ -403,10 +405,11 @@ async function pageAccount(view) {
       <div class="card" id="tfa"></div>
       <form class="card" id="pw"><h2>Change password</h2>
         <div class="field"><label>Current password</label><input name="current" type="password" autocomplete="current-password" required></div>
-        <div class="field"><label>New password</label><input name="password" type="password" minlength="8" autocomplete="new-password" required><div class="hint">At least 8 characters. Your other phones and browsers are logged out.</div></div>
+        <div class="field"><label>New password</label><input name="password" type="password" minlength="10" autocomplete="new-password" required><div class="hint">At least 10 characters. Your other phones and browsers are logged out.</div></div>
         <div class="field"><label>New password again</label><input name="again" type="password" autocomplete="new-password" required></div>
         <button class="btn primary">Change password</button></form>
-    </div>`;
+    </div>
+    ${NV.slots('account.cards', { sec })}`;
   $('#pw').onsubmit = async (e) => {
     e.preventDefault();
     const f = formData(e.target);
@@ -455,4 +458,5 @@ async function pageAccount(view) {
       <div class="field"><label>Code from your app</label><input name="code" inputmode="numeric" autocomplete="one-time-code"></div>`, [
       { label: 'Keep it on' }, { label: 'Turn off', cls: 'danger', onClick: async (el) => { await api('/nuvolve/app/api/me/2fa/disable', { body: formData(el) }); await refreshBoot(); renderShell(); toast('Two-factor is off'); route(); } }]);
   }
+  NV.emit('account.rendered', { view, sec });
 }

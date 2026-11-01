@@ -3,26 +3,32 @@ const token = location.pathname.split('/').pop();
 const app = document.getElementById('app');
 let map = null;
 let techMarker = null;
+// In the customer's language (src/lang/es/pages.js).
+const t = (text, vars) => NV.t(text, vars);
 
 const HEADLINE = {
-  on_the_way: (n) => `${n} is on the way`,
-  on_site: (n) => `${n} has arrived`,
-  completed: (n) => `${n} finished your service`,
-  scheduled: (n) => `${n} is your technician`,
-  closed: () => 'This visit is closed',
+  on_the_way: (n) => t('{name} is on the way', { name: n }),
+  on_site: (n) => t('{name} has arrived', { name: n }),
+  completed: (n) => t('{name} finished your service', { name: n }),
+  scheduled: (n) => t('{name} is your technician', { name: n }),
+  closed: () => t('This visit is closed'),
 };
 
 async function load() {
   let T;
   try { T = await api(`/nuvolve/app/api/track/${token}`); } catch (e) {
-    app.innerHTML = `<h2>Link not found</h2><p class="muted">${esc(e.message)}</p>`;
+    app.innerHTML = `<h2>${esc(t('Link not found'))}</h2><p class="muted">${esc(t(e.message))}</p>`;
     return;
   }
-  const name = T.tech_name || 'Your technician';
+  if (!$('#head')) {
+    await NV.useLang(NV.preferredLang(T.lang));
+    document.title = t('Your technician');
+  }
+  const name = T.tech_name || t('Your technician');
   if (!$('#head')) {
     app.innerHTML = `
       <div class="muted" id="co"></div>
-      <div style="margin:14px 0">${T.has_photo ? `<img class="face" src="/nuvolve/app/api/track/${encodeURIComponent(token)}/photo" alt="Photo of ${esc(name)}">` : '<div class="face">🧑‍🔧</div>'}</div>
+      <div style="margin:14px 0">${T.has_photo ? `<img class="face" src="/nuvolve/app/api/track/${encodeURIComponent(token)}/photo" alt="${esc(t('Photo of {name}', { name }))}">` : '<div class="face">🧑‍🔧</div>'}</div>
       <h1 id="head" style="margin:0"></h1>
       <div id="eta"></div>
       <p class="small muted" id="what"></p>
@@ -32,10 +38,10 @@ async function load() {
   $('#co').textContent = T.company;
   $('#head').textContent = (HEADLINE[T.status] || HEADLINE.scheduled)(name);
   $('#eta').innerHTML = T.status === 'on_the_way' && T.eta_text
-    ? `<div class="eta">${esc(T.eta_text)}</div><div class="muted">${T.minutes ? `about ${T.minutes} min away` : 'estimated arrival'}</div>`
-    : T.status === 'completed' ? '<p>Thanks for having us out. Your service report is in your account.</p>' : '';
-  $('#what').textContent = [T.service_name, T.address].filter(Boolean).join(' at ');
-  $('#foot').innerHTML = `${T.tech ? '<span class="live">Live location</span><br>' : ''}${T.company_phone ? `<a class="btn" href="tel:${esc(T.company_phone)}" style="margin-top:10px">📞 Call ${esc(T.company)}</a>` : ''}`;
+    ? `<div class="eta">${esc(T.eta_text)}</div><div class="muted">${esc(T.minutes ? t('about {minutes} min away', { minutes: T.minutes }) : t('estimated arrival'))}</div>`
+    : T.status === 'completed' ? `<p>${esc(t('Thanks for having us out. Your service report is in your account.'))}</p>` : '';
+  $('#what').textContent = T.service_name && T.address ? t('{service} at {address}', { service: T.service_name, address: T.address }) : T.service_name || T.address || '';
+  $('#foot').innerHTML = `${T.tech ? `<span class="live">${esc(t('Live location'))}</span><br>` : ''}${T.company_phone ? `<a class="btn" href="tel:${esc(T.company_phone)}" style="margin-top:10px">${esc(t('📞 Call {company}', { company: T.company }))}</a>` : ''}`;
   drawMap(T);
   if (['on_the_way', 'scheduled'].includes(T.status)) setTimeout(load, 30000);
 }

@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Your data · Nuvolve CRM</title>
+  <meta name="description" content="Your data is yours. Download everything from Nuvolve CRM any time, free, even after you cancel.">
+  <link rel="icon" href="/nuvolve/app/icons/nuvolve.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/nuvolve/app/css/site.css">
+</head>
+<body>
+<header class="top"><div class="wrap">
+  <a class="brand" href="/nuvolve/"><img src="/nuvolve/app/icons/nuvolve.svg" alt="">Nuvolve CRM</a>
+  <nav aria-label="Nuvolve"><a href="/nuvolve/pricing.html">Pricing</a><a href="/nuvolve/security.html">Security</a><a href="/nuvolve/data.html" aria-current="page">Your data</a><a class="btn" href="/nuvolve/app/start.html?as=owner">Log in</a></nav>
+</div></header>
+<main class="wrap">
+<div class="hero">
+  <h1>Your data is yours. Take all of it, any time.</h1>
+  <p class="lead">Your customers, their history and your records belong to your company, not to us. Getting them out is one click, it's free, and it always will be.</p>
+</div>
+
+<div class="card">
+  <h2>Our promise</h2>
+  <ul class="ticks">
+    <li>The owner can download everything, any time, from Settings, under Import &amp; export. One click, one .zip file, no form to fill in and no one to ask.</li>
+    <li>It's free. No fee to export and no fee to leave.</li>
+    <li>It works after your free trial ends and after you cancel. A paused account can still download everything.</li>
+    <li>Nothing is held back: customers, addresses, plans, every visit and service ticket with the products used, invoices, payments, estimates, contracts, documents, messages, notes and the activity log. Photos too, if you tick the box.</li>
+    <li>Spreadsheets anyone can open, plus the same data in one JSON file for developers and other software.</li>
+    <li>Want a copy without asking? Turn on the monthly email and the owner gets one every month, early on the 1st (over 10 MB, it's a download link instead of an attachment).</li>
+  </ul>
+</div>
+
+<section>
+  <h2>What's in the download</h2>
+  <div class="card">
+    <table class="plain">
+      <thead><tr><th>File</th><th>What it holds</th></tr></thead>
+      <tbody>
+        <tr><td class="mono">Customers.csv</td><td>One row per customer: contact details, service addresses, active plans, next visit and balance</td></tr>
+        <tr><td class="mono">Plans.csv</td><td>Every recurring plan, with service, frequency, price and technician</td></tr>
+        <tr><td class="mono">Service history.csv</td><td>Every visit, with date, technician, price, notes and the products applied</td></tr>
+        <tr><td class="mono">Invoices.csv, Payments.csv</td><td>Every invoice and payment, with what is still owed</td></tr>
+        <tr><td class="mono">tables/</td><td>A spreadsheet for every list in your account, with every column</td></tr>
+        <tr><td class="mono">nuvolve-data.json</td><td>All of it in one file, for developers and other software</td></tr>
+        <tr><td class="mono">contracts/, documents/</td><td>Signed contracts and the documents you sent, as pages you can open and print</td></tr>
+        <tr><td class="mono">photos/</td><td>Visit photos, when you tick "Include photos"</td></tr>
+        <tr><td class="mono">README.txt</td><td>What each file is, and how many rows each list has</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<div class="grid two">
+  <div class="card">
+    <h2>Left out, on purpose</h2>
+    <p class="muted small">These would let someone into your account or your customers' pages, so they never go in a download:</p>
+    <ul class="ticks no">
+      <li>Passwords, two-factor secrets and login sessions</li>
+      <li>Password reset links and the private links on customer pay, signing and review pages</li>
+      <li>API keys, webhook secrets and payment keys</li>
+    </ul>
+    <p class="muted small">Card numbers are never stored in Nuvolve. They stay in your Stripe account, and each customer's Stripe ID is in the download so you can find them there.</p>
+  </div>
+  <div class="card">
+    <h2>How leaving works</h2>
+    <ol class="steps">
+      <li>In Settings, under Import &amp; export, press <b>Download everything</b>. Tick <b>Include photos</b> if you want them.</li>
+      <li>Open <span class="mono">Customers.csv</span> to check it. Most systems can import a customer list like it, and <span class="mono">Service history.csv</span> brings the history.</li>
+      <li>Cancel any time in Settings, under Payments &amp; plan. There's nothing else to sign.</li>
+      <li>Want your data deleted too? Email <a href="mailto:support@nuvolvecrm.com">support@nuvolvecrm.com</a> from the owner's email address. Nightly backups are kept for 14 days, then they're gone.</li>
+    </ol>
+  </div>
+</div>
+
+<section class="band">
+  <h2>Coming to Nuvolve? Moving in is just as easy.</h2>
+  <p>Bring the exports from FieldRoutes, GorillaDesk, PestPac or any spreadsheet. You'll see what each file was read as, every column before anything changes, and the customers you already have side by side. A dry run shows exactly what will come in, and one click undoes the whole move. <a href="/nuvolve/pricing.html">See pricing</a></p>
+</section>
+
+</main>
+<footer class="foot"><div class="wrap">
+  <span>Nuvolve CRM</span><a href="/nuvolve/pricing.html">Pricing</a><a href="/nuvolve/security.html">Security</a><a href="/nuvolve/data.html" aria-current="page">Your data</a><a href="/nuvolve/app/#signup">Start a free trial</a><a href="mailto:support@nuvolvecrm.com">support@nuvolvecrm.com</a>
+</div></footer>
+</body>
+</html>

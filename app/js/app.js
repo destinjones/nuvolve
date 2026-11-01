@@ -62,10 +62,14 @@ async function boot() {
     BOOT = await api('/nuvolve/app/api/bootstrap');
   }
   if (BOOT.company.locked) return renderLocked();
+  NV.emit('boot', { boot: BOOT });
   renderShell();
   window.addEventListener('hashchange', route);
   route();
 }
+
+// Under the login, sign-up and paused screens: what it costs, how the data is kept, and how to leave with it.
+const LOGIN_LINKS = '<p class="login-links small"><a href="/nuvolve/pricing.html">Pricing</a> · <a href="/nuvolve/security.html">Security</a> · <a href="/nuvolve/data.html">Your data</a></p>';
 
 function renderLogin(company) {
   root.innerHTML = `<div class="login-wrap"><div class="login">
@@ -80,7 +84,7 @@ function renderLogin(company) {
       <p class="small" style="text-align:center;margin-top:12px"><button class="link-btn" id="forgot">Forgot password?</button></p>
       <hr style="border:0;border-top:1px solid var(--line);margin:16px 0">
       <p style="text-align:center">New here? <a href="#signup" id="to-signup"><b>Start your free 14-day trial</b></a><br><span class="small muted">No credit card needed.</span></p>
-    </div></div></div>`;
+    </div>${LOGIN_LINKS}</div></div>`;
   $('#to-signup').onclick = (e) => { e.preventDefault(); location.hash = '#signup'; renderSetup(); };
   $('#forgot').onclick = () => modal('Reset your password', '<div class="field"><label>Your login email</label><input name="email" type="email"></div>', [
     { label: 'Cancel' },
@@ -105,8 +109,9 @@ function renderLocked() {
     <p>Your customers, schedules and history are safe. Subscribe to pick up right where you left off.</p>
     <p><b>${money(c.pricePerRoute)}/month per route</b> · you have ${c.routes} route${c.routes === 1 ? '' : 's'} = <b>${money(c.pricePerRoute * Math.max(1, c.routes))}/month</b>. Unlimited office users. Cancel anytime.</p>
     ${BOOT.me.isAdmin ? '<button class="btn primary big block" id="sub">Subscribe</button>' : '<div class="alert info">Ask the account owner to subscribe.</div>'}
+    ${NV.slots('locked.actions', { c, me: BOOT.me })}
     <p class="small" style="text-align:center;margin-top:12px"><button class="link-btn" id="out">Log out</button></p>
-  </div></div></div>`;
+  </div>${LOGIN_LINKS}</div></div>`;
   if ($('#sub')) $('#sub').onclick = subscribe;
   $('#out').onclick = async () => { await api('/nuvolve/app/api/logout', { method: 'POST' }); location.href = '/nuvolve/app/'; };
 }
@@ -122,7 +127,7 @@ async function subscribe() {
 function renderReset(token) {
   root.innerHTML = `<div class="login-wrap"><div class="login"><div class="card">
     <h1>Pick a new password</h1>
-    <form id="f"><div class="field"><label>New password</label><input name="password" type="password" minlength="8" required autocomplete="new-password"></div>
+    <form id="f"><div class="field"><label>New password</label><input name="password" type="password" minlength="10" required autocomplete="new-password"><div class="hint">At least 10 characters.</div></div>
     <button class="btn primary big block">Save and log in</button></form></div></div></div>`;
   $('#f').onsubmit = async (e) => {
     e.preventDefault();
@@ -148,15 +153,18 @@ function renderSetup() {
           <div class="field"><label>Your name</label><input name="name" required></div>
           <div class="field"><label>Your email (login)</label><input name="email" type="email" required></div>
         </div>
-        <div class="field"><label>Pick a password</label><input name="password" type="password" minlength="8" required autocomplete="new-password"><div class="hint">At least 8 characters.</div></div>
+        <div class="field"><label>Pick a password</label><input name="password" type="password" minlength="10" required autocomplete="new-password"><div class="hint">At least 10 characters, not a common word or your name. A few words together work well.</div></div>
         <button class="btn primary big block">Start my free trial</button>
       </form>
       <p class="small" style="text-align:center;margin-top:12px">Already have an account? <a href="/nuvolve/app/">Log in</a></p>
-    </div></div></div>`;
+    </div>${LOGIN_LINKS}</div></div>`;
   $('#f').onsubmit = async (e) => {
     e.preventDefault();
     try {
-      await api('/nuvolve/app/api/signup', { body: formData(e.target) });
+      // The browser's time zone becomes the company's, so "today" turns over at the owner's midnight. Settings can change it.
+      const body = formData(e.target);
+      try { body.timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch { body.timezone = ''; }
+      await api('/nuvolve/app/api/signup', { body });
       location.href = '/nuvolve/app/';
     } catch (err) { toast(err.message, true); }
   };
@@ -193,8 +201,9 @@ const NAV = [
   ['#/platform', '🛰️', 'Companies', 'platform'],
 ];
 function navHtml() {
-  const can = (n) => (n[3] !== 'admin' || BOOT.me.isAdmin) && (n[3] !== 'manager' || BOOT.me.isManager) && (n[3] !== 'platform' || BOOT.me.isPlatformAdmin);
-  const items = NAV.filter((n) => n[0] === '§' || can(n));
+  const can = (n) => (n[3] !== 'admin' || BOOT.me.isAdmin) && (n[3] !== 'manager' || BOOT.me.isManager)
+    && (n[3] !== 'platform' || BOOT.me.isPlatformAdmin || BOOT.me.platformAdminUnconfirmed);
+  const items = NV.navList(NAV).filter((n) => n[0] === '§' || can(n));
   return items.filter((n, i) => n[0] !== '§' || (items[i + 1] && items[i + 1][0] !== '§')).map((n) => (n[0] === '§'
     ? `<div class="nav-section">${n[1]}</div>`
     : `<a href="${n[0]}" data-href="${n[0]}"><span class="ico">${n[1]}</span>${n[2]}${n[0] === '#/reviews' && BOOT.unread ? `<span class="badge">${BOOT.unread}</span>` : ''}</a>`)).join('');
@@ -265,35 +274,6 @@ function globalSearch() {
   });
 }
 
-// Address type-ahead: fills street, city, state, zip, and map pin from one box.
-function addressAutocomplete(input, onPick) {
-  const wrap = document.createElement('div');
-  wrap.className = 'search-results hidden';
-  input.parentNode.style.position = 'relative';
-  input.parentNode.appendChild(wrap);
-  input.setAttribute('autocomplete', 'off');
-  let t;
-  input.addEventListener('input', () => {
-    clearTimeout(t);
-    t = setTimeout(async () => {
-      const q = input.value.trim();
-      if (q.length < 5) return wrap.classList.add('hidden');
-      const list = await api(`/nuvolve/app/api/address-suggest?q=${encodeURIComponent(q)}`).catch(() => []);
-      if (!list.length) return wrap.classList.add('hidden');
-      wrap.innerHTML = list.map((a, i) => `<a href="javascript:void 0" data-i="${i}">📍 ${esc(a.label)}</a>`).join('');
-      wrap.classList.remove('hidden');
-      $$('a', wrap).forEach((a) => (a.onmousedown = (e) => {
-        e.preventDefault();
-        const pick = list[Number(a.dataset.i)];
-        input.value = pick.address;
-        wrap.classList.add('hidden');
-        onPick(pick);
-      }));
-    }, 300);
-  });
-  input.addEventListener('blur', () => setTimeout(() => wrap.classList.add('hidden'), 200));
-}
-
 // Fills a form's address fields from a suggestion. Hidden lat/lng inputs carry the map pin.
 function fillAddress(root, a) {
   for (const k of ['city', 'state', 'zip']) if ($(`[name=${k}]`, root)) $(`[name=${k}]`, root).value = a[k] || '';
@@ -339,9 +319,9 @@ function route(silent) {
     reviews: pageReviews, messages: pageMessages, platform: pagePlatform, insights: pageInsights, acquisitions: pageAcquisitions,
     account: pageAccount, sales: pageSales, documents: pageDocuments, ask: pageAssistant, retention: pageRetention, inbox: pageInbox, switch: pageSwitch, inventory: pageInventory, marketing: pageMarketing, dispatch: pageDispatch, commercial: pageCommercial, termite: pageTermite, accounting: pageAccounting,
   };
-  // Required two-factor not set up yet: only the account page opens.
-  const fn = BOOT.me.mustSetup2fa ? pageAccount : pages[parts[0] || ''] || pageToday;
-  Promise.resolve(fn(view, parts[1], params)).catch((e) => {
+  // Required two-factor not set up yet: only the account page opens. Feature pages (NV.page) come after the core ones.
+  const fn = BOOT.me.mustSetup2fa ? pageAccount : pages[parts[0] || ''] || NV.pageFor(parts[0]) || pageToday;
+  Promise.resolve(fn(view, parts[1], params)).then(() => NV.emit('page', { name: parts[0] || '', id: parts[1], params, view })).catch((e) => {
     view.innerHTML = `<div class="alert err">${esc(e.message)}</div>`;
   });
 }
@@ -367,7 +347,7 @@ async function pageToday(view) {
   view.innerHTML = `
     <div class="page-head">
       <div><h1>${hello}, ${esc(BOOT.me.name.split(' ')[0])}</h1>
-      <div class="muted">${fmtDate(d.date, { weekday: 'long', month: 'long', day: 'numeric' })} · ${totalStops} stops today, ${doneStops} done</div></div>
+      <div class="muted">${fmtDate(d.date, { weekday: 'long', month: 'long', day: 'numeric' })} · ${totalStops} stop${totalStops === 1 ? '' : 's'} today, ${doneStops} done</div></div>
       <div class="actions">
         <a class="btn primary" href="#/customers/new">+ New customer</a>
         <button class="btn" id="q-visit">+ Schedule visit</button>
@@ -377,6 +357,7 @@ async function pageToday(view) {
 
     ${d.missed ? `<div class="alert warn"><span>⚠️ <b>${d.missed} past stop${d.missed > 1 ? 's were' : ' was'} never completed.</b> Reschedule or mark them done so customers don't fall through the cracks.</span><a class="btn sm" href="#/schedule?missed=1">Review</a></div>` : ''}
     ${d.unassigned ? `<div class="alert info"><span>📌 ${d.unassigned} visit${d.unassigned > 1 ? 's' : ''} in the next 7 days ${d.unassigned > 1 ? 'have' : 'has'} no tech.</span><a class="btn sm" href="#/schedule">Assign</a></div>` : ''}
+    ${NV.slots('today.alerts', { d })}
 
     <div class="stats">
       <a class="stat" href="#/billing?tab=paid"><div class="label">Collected this month</div><div class="value">${money(d.revenueMonth)}</div><div class="sub">${money(d.billedMonth)} billed</div></a>
@@ -412,7 +393,7 @@ async function pageToday(view) {
             <div style="display:flex;justify-content:space-between;gap:8px"><a href="#/customers/${r.customer_id}"><b>${esc(custName(r))}</b></a><span class="muted small">${fmtDate(r.created_at)}</span></div>
             <div>${esc(r.message)}</div>
             ${r.preferred_date ? `<div class="small muted">Prefers ${fmtDay(r.preferred_date)}</div>` : ''}
-            <div class="actions" style="margin-top:6px">${r.visit_id ? `<a class="btn sm primary" href="#/visits/${r.visit_id}">Move the visit</a>` : `<button class="btn sm primary" data-sched="${r.id}" data-cust="${r.customer_id}">Schedule it</button>`}<button class="btn sm" data-close="${r.id}">Mark handled</button></div>
+            <div class="actions" style="margin-top:6px">${r.visit_id ? `<a class="btn sm primary" href="#/visits/${r.visit_id}">Move the visit</a>` : `<button class="btn sm primary" data-sched="${r.id}" data-cust="${r.customer_id}">Schedule it</button>`}<button class="btn sm" data-close="${r.id}">Mark handled</button>${NV.slots('today.request', { r })}</div>
           </div>`).join('') : '<p class="muted">Requests customers send from their pay link land here.</p>'}
         </div>
       </div>
@@ -424,7 +405,7 @@ async function pageToday(view) {
   $$('[data-sched]', view).forEach((b) => (b.onclick = async () => {
     const c = await api(`/nuvolve/app/api/customers/${b.dataset.cust}`);
     const req = d.newRequests.find((r) => r.id === Number(b.dataset.sched));
-    scheduleVisitModal(c, { request_id: req.id, date: req.preferred_date, office_notes: req.message });
+    scheduleVisitModal(c, { request_id: req.id, date: req.preferred_date, office_notes: req.message, service_type_id: req.service_type_id });
   }));
 }
 
@@ -487,6 +468,7 @@ async function pageNewCustomer(view, _id, params = {}) {
           <div class="field"><label>How did they find you?</label><select name="source" id="nc-source"><option value="">Pick one</option>${['Google', 'Referral', 'Door knock', 'Yard sign', 'Facebook', 'Nextdoor', 'Repeat customer', 'Other'].map((x) => `<option>${x}</option>`).join('')}</select></div>
         </div>
         <div class="field hidden" id="nc-ref"><label>Referral code (optional)</label><input name="referral_code" placeholder="RITA-7K2F" style="text-transform:uppercase"><div class="hint">From the customer who sent them. They both get their reward after the first service.</div></div>
+        ${NV.slots('customer.new', { params })}
       </div></div>
 
       <div class="form-step"><div class="num">2</div><div class="body">
@@ -498,6 +480,7 @@ async function pageNewCustomer(view, _id, params = {}) {
           <div class="field"><label>Zip</label><input name="zip"></div>
         </div>
         <div class="field"><label>Gate code, pets, special instructions</label><input name="access_notes" placeholder="Gate code 1234, friendly dog in back"></div>
+        ${NV.slots('customer.new.property', { params })}
         ${multiBranch() && !BOOT.me.location_id ? `<div class="field"><label>Branch</label><select name="location_id"><option value="">Pick automatically from the service areas</option>${BOOT.locations.map((l) => `<option value="${l.id}" ${String(l.id) === currentBranch() ? 'selected' : ''}>${esc(l.name)}</option>`).join('')}</select></div>` : ''}
       </div></div>
 
@@ -537,15 +520,19 @@ async function pageNewCustomer(view, _id, params = {}) {
   const checkDups = () => {
     clearTimeout(dt);
     dt = setTimeout(async () => {
+      if (!form.isConnected) return; // they left the page before the check ran
       const q = new URLSearchParams({ phone: form.phone.value, email: form.email.value, address: form.address.value });
       const rows = await api(`/nuvolve/app/api/customers/duplicates?${q}`).catch(() => []);
-      $('#dups').innerHTML = rows.length ? `<div class="alert warn"><div><b>Already a customer?</b> ${rows.map((r) => `<div><a href="#/customers/${r.id}">${esc(r.name || r.company)}</a> <span class="small muted">${esc(r.address || '')} · ${esc(r.phone || '')} · ${esc(r.status)}</span></div>`).join('')}</div></div>` : '';
+      const box = $('#dups');
+      if (!box) return;
+      box.innerHTML = rows.length ? `<div class="alert warn"><div><b>Already a customer?</b> ${rows.map((r) => `<div><a href="#/customers/${r.id}">${esc(r.name || r.company)}</a> <span class="small muted">${esc(r.address || '')} · ${esc(r.phone || '')} · ${esc(r.status)}</span></div>`).join('')}</div></div>` : '';
     }, 400);
   };
   for (const n of ['phone', 'email', 'address']) form[n].addEventListener('change', checkDups);
   if (params.phone) checkDups();
   addressAutocomplete($('#nc-addr'), (a) => { fillAddress(form, a); checkDups(); });
   wireInitial(form, $('#svc'), $('#freq'));
+  NV.emit('customer.new.rendered', { form, params });
   form.onsubmit = async (e) => {
     e.preventDefault();
     const f = formData(e.target);
@@ -559,6 +546,8 @@ async function pageNewCustomer(view, _id, params = {}) {
           location_id: f.location_id || undefined,
           property: { address: f.address, city: f.city, state: f.state.toUpperCase(), zip: f.zip, access_notes: f.access_notes, lat: f.lat, lng: f.lng },
           plan: f.frequency ? { service_type_id: f.service_type_id, frequency: f.frequency, price: f.price, start_date: f.start_date, tech_id: f.tech_id, ...initialBody(f) } : null,
+          // Fields that feature modules add to this form (NV.slot('customer.new') + NV.collector('customer.new')).
+          ...NV.collect('customer.new', form, { fields: f }),
         },
       });
       toast(f.frequency ? `Customer saved and visits scheduled${multiBranch() ? ` (${branchName(r.location_id)})` : ''}` : 'Customer saved');
@@ -588,7 +577,7 @@ async function pageCustomer(view, id) {
         ${c.company && (c.first_name || c.last_name) ? `<div><b>${esc(c.company)}</b></div>` : ''}
         ${home ? `<div>${esc(home.address)}${home.city ? ', ' + esc(home.city) : ''} ${esc(home.state || '')} ${esc(home.zip || '')}</div>` : ''}
         <div class="muted">${c.phone ? `<a href="tel:${esc(c.phone)}">${esc(c.phone)}</a>` : 'No phone'} · ${c.email ? `<a href="mailto:${esc(c.email)}">${esc(c.email)}</a>` : 'No email'}</div>
-        <div class="hero-tags">${c.location && multiBranch() ? `<span class="pill">📍 ${esc(c.location)}</span>` : ''}${c.autopay ? '<span class="pill green">Autopay</span>' : ''}${c.balance > 0 ? `<span class="pill yellow">${money(c.balance)} due</span>` : '<span class="pill green">Paid up</span>'}${home?.access_notes ? `<span class="pill">🔑 ${esc(home.access_notes)}</span>` : ''}<span id="risk-tag"></span></div>
+        <div class="hero-tags">${c.location && multiBranch() ? `<span class="pill">📍 ${esc(c.location)}</span>` : ''}${c.autopay ? '<span class="pill green">Autopay</span>' : ''}${c.balance > 0 ? `<span class="pill yellow">${money(c.balance)} due</span>` : '<span class="pill green">Paid up</span>'}${home?.access_notes ? `<span class="pill">🔑 ${esc(home.access_notes)}</span>` : ''}<span id="risk-tag"></span>${NV.slots('customer.tags', { c, home })}</div>
         ${home?.lat != null ? `<div class="actions small" style="margin-top:8px">
           <a class="btn sm" target="_blank" href="https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${home.lat},${home.lng}">🏠 Street view</a>
           <a class="btn sm" target="_blank" href="${mapsLink(home)}">🧭 Directions</a></div>` : ''}
@@ -603,6 +592,7 @@ async function pageCustomer(view, id) {
         <button class="btn" id="a-docs" title="Letters, statements and your own documents for this customer">📄 Documents</button>
         <button class="btn" id="a-contracts" title="Send a contract to sign, and see the ones already sent">✍ Contracts</button>
         ${commercial ? '<button class="btn" id="a-binder">📁 Audit binder</button>' : ''}
+        ${NV.slots('customer.actions', { c })}
         <button class="btn" id="a-edit">Edit</button>
       </div>
     </div>
@@ -615,6 +605,7 @@ async function pageCustomer(view, id) {
       <div class="stat"><div class="label">Customer since</div><div class="value" style="font-size:20px">${fmtDate(c.created_at, { month: 'short', year: 'numeric' })}</div><div class="sub">${esc(c.source || '')}</div></div>
     </div>
     ${c.notes ? `<div class="alert info">📝 ${esc(c.notes)}</div>` : ''}
+    ${NV.slots('customer.alerts', { c })}
 
     <div class="grid cols-2">
       <div>
@@ -655,6 +646,7 @@ async function pageCustomer(view, id) {
               ${p.lat == null ? '<div class="small" style="color:var(--warn)">Not on map yet. Check the address.</div>' : ''}</div>
             <button class="btn sm" data-editprop="${p.id}">Edit</button></div>`).join('') || '<p class="muted">No address yet.</p>'}
         </div>
+        ${NV.slots('customer.left', { c })}
       </div>
 
       <div>
@@ -688,6 +680,7 @@ async function pageCustomer(view, id) {
           <div id="msgs"><p class="muted small">Loading...</p></div>
         </div>
 
+        ${NV.slots('customer.right', { c })}
         ${BOOT.me.isAdmin ? `<div class="card">
           <div class="card-head"><h2>Danger zone</h2></div>
           <button class="btn sm danger" id="a-del">Delete customer and all their records</button>
@@ -710,8 +703,10 @@ async function pageCustomer(view, id) {
     catch (err) { toast(err.message, true); e.target.disabled = false; }
   };
   houseMaps(view);
+  const msgBox = $('#msgs');
   api(`/nuvolve/app/api/messages?customer_id=${c.id}`).then((m) => {
-    $('#msgs').innerHTML = m.length ? m.slice(0, 8).map((x) => `<details style="padding:6px 0;border-bottom:1px solid var(--line)"><summary>${x.channel === 'sms' ? '💬' : '✉️'} ${esc(x.subject || x.kind)} <span class="small muted">${fmtDate(x.created_at)} · ${esc(x.status)}</span></summary><pre style="white-space:pre-wrap;font:inherit;font-size:13px">${esc(x.body)}</pre></details>`).join('')
+    if (!msgBox.isConnected) return; // they already moved to another page
+    msgBox.innerHTML = m.length ? m.slice(0, 8).map((x) => `<details style="padding:6px 0;border-bottom:1px solid var(--line)"><summary>${x.channel === 'sms' ? '💬' : '✉️'} ${esc(x.subject || x.kind)} <span class="small muted">${fmtDate(x.created_at)} · ${esc(x.status)}</span></summary><pre style="white-space:pre-wrap;font:inherit;font-size:13px">${esc(x.body)}</pre></details>`).join('')
       : '<p class="muted small">Service summaries, reminders and review requests sent to this customer show up here.</p>';
   });
   $('#a-pay').onclick = () => takePaymentModal(c);
@@ -735,11 +730,13 @@ async function pageCustomer(view, id) {
   $$('[data-payinv]', view).forEach((b) => (b.onclick = () => takePaymentModal(c, c.invoices.find((i) => i.id === Number(b.dataset.payinv)))));
   $$('[data-editplan]', view).forEach((b) => (b.onclick = () => planModal(c, c.plans.find((p) => p.id === Number(b.dataset.editplan)))));
   $$('[data-editprop]', view).forEach((b) => (b.onclick = () => propertyModal(c, c.properties.find((p) => p.id === Number(b.dataset.editprop)))));
-  $$('[data-stopplan]', view).forEach((b) => (b.onclick = () => modal('Stop this service plan?', `<p>Future visits on this plan are removed. Past visits and invoices stay.</p>
+  // Stopping a plan can be taken over by a feature (cancel reasons and save offers): NV.override('plan.stop').
+  $$('[data-stopplan]', view).forEach((b) => (b.onclick = () => NV.run('plan.stop', { c, plan: c.plans.find((p) => p.id === Number(b.dataset.stopplan)), done: () => route() }, () => modal('Stop this service plan?', `<p>Future visits on this plan are removed. Past visits and invoices stay.</p>
     <div class="field"><label>Why are they stopping? (helps you win them back)</label><select name="reason"><option value="">Pick one</option>${['Price', 'Moving', 'Still seeing pests', 'Switched companies', 'Doing it themselves', 'Bad experience', 'Seasonal pause', 'Other'].map((x) => `<option>${x}</option>`).join('')}</select></div>`, [
     { label: 'Keep it' },
     { label: 'Stop plan', cls: 'primary', onClick: async (m) => { await api(`/nuvolve/app/api/plans/${b.dataset.stopplan}`, { method: 'DELETE', body: formData(m) }); toast('Plan stopped'); route(); } },
-  ])));
+  ]))));
+  NV.emit('customer.rendered', { c, view });
   if ($('#a-del')) $('#a-del').onclick = () => modal('Delete this customer?', `<p>This permanently removes <b>${esc(custName(c))}</b> with every visit, invoice, and payment. Usually it's better to mark them <b>Inactive</b> under Edit.</p>`, [
     { label: 'Cancel' },
     { label: 'Delete forever', cls: 'primary', onClick: async () => { await api(`/nuvolve/app/api/customers/${c.id}`, { method: 'DELETE' }); location.hash = '#/customers'; } },
@@ -759,7 +756,7 @@ function houseMaps(root) {
 }
 
 function editCustomerModal(c) {
-  modal('Edit customer', `
+  const em = modal('Edit customer', `
     <div class="row"><div class="field"><label>First name</label><input name="first_name" value="${esc(c.first_name || '')}"></div>
     <div class="field"><label>Last name</label><input name="last_name" value="${esc(c.last_name || '')}"></div></div>
     <div class="field"><label>Business name</label><input name="company" value="${esc(c.company || '')}"></div>
@@ -769,12 +766,14 @@ function editCustomerModal(c) {
     <div class="row"><div class="field"><label>Type</label><select name="type"><option value="residential">Residential</option><option value="commercial" ${c.type === 'commercial' ? 'selected' : ''}>Commercial</option></select></div>
     <div class="field"><label>Status</label><select name="status">${['active', 'lead', 'inactive'].map((s) => `<option value="${s}" ${c.status === s ? 'selected' : ''}>${s[0].toUpperCase() + s.slice(1)}</option>`).join('')}</select></div></div>
     ${multiBranch() && !BOOT.me.location_id ? `<div class="field"><label>Branch</label><select name="location_id">${BOOT.locations.map((l) => `<option value="${l.id}" ${l.id === c.location_id ? 'selected' : ''}>${esc(l.name)}</option>`).join('')}</select></div>` : ''}
+    ${NV.slots('customer.form', { c })}
     <div class="field"><label>Notes</label><textarea name="notes">${esc(c.notes || '')}</textarea></div>
     ${Number(BOOT.settings?.tax_rate) > 0 ? `<label class="check"><input type="checkbox" name="tax_exempt" ${c.tax_exempt ? 'checked' : ''}> Tax exempt (no sales tax on their invoices)</label>` : ''}`,
   [{ label: 'Cancel' }, { label: 'Save', cls: 'primary', onClick: async (m) => {
     await api(`/nuvolve/app/api/customers/${c.id}`, { method: 'PUT', body: formData(m) });
     toast('Saved'); route();
   } }]);
+  NV.emit('customer.form.rendered', { c, el: em.el });
 }
 
 function propertyModal(c, p = {}) {
@@ -784,6 +783,7 @@ function propertyModal(c, p = {}) {
     <div class="field"><label>State</label><input name="state" maxlength="2" value="${esc(p.state || '')}"></div>
     <div class="field"><label>Zip</label><input name="zip" value="${esc(p.zip || '')}"></div></div>
     <div class="field"><label>Gate code, pets, instructions</label><input name="access_notes" value="${esc(p.access_notes || '')}"></div>
+    ${NV.slots('property.form', { c, p })}
     ${c.type === 'commercial' ? `<div class="field"><label>Site name</label><input name="site_name" placeholder="Store #14, Plant 2, Downtown kitchen" value="${esc(p.site_name || '')}"></div>
     <div class="row"><div class="field"><label>Site contact</label><input name="site_contact" placeholder="Name and title" value="${esc(p.site_contact || '')}"></div>
     <div class="field"><label>Site phone</label><input name="site_phone" value="${esc(p.site_phone || '')}"></div></div>` : ''}`,
@@ -794,6 +794,7 @@ function propertyModal(c, p = {}) {
     toast('Address saved'); route();
   } }]);
   addressAutocomplete($('[name=address]', pm.el), (a) => fillAddress($('.mb', pm.el), a));
+  NV.emit('property.form.rendered', { c, p, el: pm.el });
 }
 
 function planModal(c, p) {
@@ -811,6 +812,7 @@ function planModal(c, p) {
       ${editing ? '' : `<div class="field"><label>First visit</label><input name="start_date" type="date" value="${todayStr()}"></div>`}
       <div class="field"><label>Tech</label><select name="tech_id">${techOptions(p.tech_id)}</select></div>
     </div>
+    ${NV.slots('plan.form', { c, p, editing })}
     ${editing ? '<div class="hint">Changes apply to every future visit on this plan.</div>' : initialFields()}`,
   [{ label: 'Cancel' }, { label: 'Save plan', cls: 'primary', onClick: async (el) => {
     if (!editing && !c.properties.length) throw new Error('Add a service address first');
@@ -821,6 +823,7 @@ function planModal(c, p) {
   } }]);
   $('#pm-svc', m.el).addEventListener('change', (e) => { $('#pm-price', m.el).value = e.target.selectedOptions[0].dataset.price; });
   if (!editing) wireInitial(m.el, $('#pm-svc', m.el), $('select[name=frequency]', m.el));
+  NV.emit('plan.form.rendered', { c, p, editing, el: m.el });
 }
 
 // Customer search box used inside modals. Calls onPick(customerDetail).
@@ -847,7 +850,8 @@ function scheduleVisitModal(c, preset = {}) {
       box.innerHTML = `<p>${esc(custName(cust))} has no service address yet.</p><a class="btn primary" href="#/customers/${cust.id}">Open customer</a>`;
       return;
     }
-    const st = defaultService();
+    // A service request starts from the service the customer asked for.
+    const st = serviceList().find((s) => s.id === Number(preset.service_type_id)) || defaultService();
     box.innerHTML = `
       <p><b>${esc(custName(cust))}</b></p>
       <div class="field"><label>Address</label><select name="property_id">${cust.properties.map((p) => `<option value="${p.id}">${esc(p.address)}</option>`).join('')}</select></div>
@@ -945,7 +949,8 @@ function cardModal(c) {
       [{ label: 'Close' }, { label: 'Send pay link', cls: 'primary', onClick: () => payLinkModal(c) }]);
   }
   modal('Save a card (demo mode)', `<p class="alert info">Stripe isn't connected yet, so this saves a pretend card for testing autopay. No money moves.</p>
-    <div class="field"><label>Card number</label><input name="number" value="4242 4242 4242 4242"></div>`,
+    <div class="field"><label>Card number</label><input name="number" value="4242 4242 4242 4242"></div>
+    <div class="field"><label>Expires (MM/YY)</label><input name="exp" value="12/30" inputmode="numeric"></div>`,
   [{ label: 'Cancel' }, { label: 'Save card and turn on autopay', cls: 'primary', onClick: async (m) => {
     await api(`/nuvolve/app/api/customers/${c.id}/demo-card`, { body: formData(m) });
     await api(`/nuvolve/app/api/customers/${c.id}`, { method: 'PUT', body: { autopay: true } });
@@ -967,9 +972,13 @@ function invoiceModal(c) {
 // ---------- Schedule ----------
 async function pageSchedule(view, _id, params) {
   if (params.missed) return pageMissed(view);
-  const start = params.week || mondayOf(todayStr());
-  const days = [...Array(6)].map((_, i) => addDays(start, i)); // Mon-Sat
-  const visits = await api(`/nuvolve/app/api/visits?from=${days[0]}&to=${days[5]}`);
+  // Monday to Saturday, and Sunday too for a company that works Sundays or has a visit on one. On a Sunday off,
+  // "This week" is the week ahead rather than the one that just ended.
+  const sundays = String(BOOT.settings.work_days || '1,2,3,4,5').split(',').includes('0');
+  const start = params.week || (parseYmd(todayStr()).getDay() === 0 && !sundays ? addDays(todayStr(), 1) : mondayOf(todayStr()));
+  const week = [...Array(7)].map((_, i) => addDays(start, i));
+  const visits = await api(`/nuvolve/app/api/visits?from=${week[0]}&to=${week[6]}`);
+  const days = sundays || visits.some((v) => v.date === week[6]) ? week : week.slice(0, 6);
   const rows = [...BOOT.techs.map((t) => ({ id: t.id, name: t.name, color: t.color })), { id: null, name: 'Unassigned', color: '#a0aec0' }];
   const key = (tech, date) => `${tech ?? ''}|${date}`;
   const byCell = {};
@@ -985,9 +994,9 @@ async function pageSchedule(view, _id, params) {
         <button class="btn primary" id="add">+ Schedule visit</button>
       </div>
     </div>
-    <div class="board" style="grid-template-columns:140px repeat(6, minmax(150px, 1fr))">
+    <div class="board" style="grid-template-columns:140px repeat(${days.length}, minmax(150px, 1fr))">
       <div class="h"></div>
-      ${days.map((d) => `<div class="h ${d === todayStr() ? 'today' : ''}">${fmtDate(d, { weekday: 'short', month: 'numeric', day: 'numeric' })}<div class="small muted">${visits.filter((v) => v.date === d).length} stops</div></div>`).join('')}
+      ${days.map((d) => { const n = visits.filter((v) => v.date === d).length; return `<div class="h ${d === todayStr() ? 'today' : ''}">${fmtDate(d, { weekday: 'short', month: 'numeric', day: 'numeric' })}<div class="small muted">${n} stop${n === 1 ? '' : 's'}</div></div>`; }).join('')}
       ${rows.map((t) => `<div class="tech"><span class="dot" style="background:${esc(t.color)}"></span>${esc(t.name)}</div>
         ${days.map((d) => {
           const list = byCell[key(t.id, d)] || [];
@@ -1174,6 +1183,7 @@ async function pageVisit(view, id) {
           ${v.customer_notes ? `<p class="small muted">Customer notes: ${esc(v.customer_notes)}</p>` : ''}
           <div class="actions"><a class="btn" href="${mapsLink(v)}" target="_blank">Navigate</a></div>
         </div>
+        ${NV.slots('visit.left', { v })}
         ${!done ? `<div class="card"><h2>Change this visit</h2>
           <div class="row"><div class="field"><label>Date</label><input type="date" id="mv-date" value="${v.date}"></div>
           <div class="field"><label>Tech</label><select id="mv-tech">${techOptions(v.tech_id)}</select></div></div>
@@ -1190,8 +1200,10 @@ async function pageVisit(view, id) {
           ${v.signature ? `<p><b>Signature</b><br><img src="${v.signature}" style="max-width:100%;border:1px solid var(--line);border-radius:8px"></p>` : ''}
           ${v.invoice ? `<p>Invoice #${v.invoice.id}: ${money(v.invoice.amount)} ${statusPill(v.invoice.status)}</p>` : ''}`
         : `<h2>Complete this stop</h2><div id="ticket"></div>`}
+        ${NV.slots('visit.right', { v })}
       </div>
     </div>`;
+  NV.emit('visit.rendered', { v, view });
   $('#v-docs').onclick = () => docsForRecord({ source: 'visit', params: { visit_id: v.id }, title: `${v.service_name || 'Visit'} on ${fmtDate(v.date)}` });
   if (done) photoStrip($('#v-photos'), v.id, v.photos, { canAdd: true, canDelete: () => true });
   if (!done) {
@@ -1199,10 +1211,15 @@ async function pageVisit(view, id) {
       toast(r.autopay?.charged ? `Stop completed. Autopay charged ${money(r.autopay.amount)}` : r.invoiceId ? 'Stop completed and invoice created' : 'Stop completed');
       route();
     });
-    $('#mv-save').onclick = async () => { await api(`/nuvolve/app/api/visits/${v.id}`, { method: 'PUT', body: { date: $('#mv-date').value, tech_id: $('#mv-tech').value || null } }); toast('Saved'); route(); };
+    $('#mv-save').onclick = async () => {
+      try { await api(`/nuvolve/app/api/visits/${v.id}`, { method: 'PUT', body: { date: $('#mv-date').value, tech_id: $('#mv-tech').value || null } }); toast('Saved'); route(); } catch (e) { toast(e.message, true); }
+    };
     $('#skip').onclick = () => modal('Skip this visit?', '<div class="field"><label>Reason</label><input name="reason" placeholder="Customer not home, rain..."></div>', [
       { label: 'Back' }, { label: 'Skip', cls: 'primary', onClick: async (m) => { await api(`/nuvolve/app/api/visits/${v.id}/skip`, { body: formData(m) }); route(); } }]);
-    $('#cancel').onclick = async () => { await api(`/nuvolve/app/api/visits/${v.id}`, { method: 'DELETE' }); toast('Visit cancelled'); location.hash = `#/customers/${v.customer_id}`; };
+    $('#cancel').onclick = async () => {
+      if (!confirm('Cancel this visit? It comes off the schedule.')) return;
+      try { await api(`/nuvolve/app/api/visits/${v.id}`, { method: 'DELETE' }); toast('Visit cancelled'); location.hash = `#/customers/${v.customer_id}`; } catch (e) { toast(e.message, true); }
+    };
   }
 }
 
@@ -1216,13 +1233,13 @@ async function pageBilling(view, _id, params) {
   const chargeable = !isPayments && tab !== 'paid' ? rows.filter((r) => r.card_last4 && r.status === 'open') : [];
 
   view.innerHTML = `
-    <div class="page-head"><div><h1>Billing</h1><div class="muted">${rows.length} ${isPayments ? 'payments in the last 30 days' : 'invoices'} · ${money(total)}</div></div>
+    <div class="page-head"><div><h1>Billing</h1><div class="muted">${rows.length} ${isPayments ? `payment${rows.length === 1 ? '' : 's'} in the last 30 days` : `invoice${rows.length === 1 ? '' : 's'}`} · ${money(total)}</div></div>
       <div class="actions"><button class="btn primary" id="pay">💵 Take payment</button>
       ${tab === 'pastdue' && rows.length ? '<button class="btn" id="remind-all">🔔 Send reminders to everyone past due</button>' : ''}
       <a class="btn" href="#/messages">✉️ Outbox</a>
       ${chargeable.length ? `<button class="btn" id="charge-all">Charge ${chargeable.length} card${chargeable.length > 1 ? 's' : ''} on file</button>` : ''}
       ${billingExtras()}</div></div>
-    ${!BOOT.stripeEnabled ? '<div class="alert info"><span>💳 Card payments are in <b>demo mode</b>. Everything works, but no real money moves. See the README to connect Stripe.</span></div>' : ''}
+    ${!BOOT.stripeEnabled ? '<div class="alert info"><span>💳 Card payments are in <b>demo mode</b>. Everything works, but no real money moves. Connect Stripe in Settings → Payments & plan.</span></div>' : ''}
     <div class="tabs">${BILLING_TABS.map(([k, l]) => `<button data-tab="${k}" class="${k === tab ? 'on' : ''}">${l}</button>`).join('')}</div>
     <div class="card flush"><div class="table-wrap">
     ${rows.length ? (isPayments
@@ -1287,7 +1304,8 @@ function wireBillingExtras(view) {
       location.href = `/nuvolve/app/api/export/${b.dataset.exp}?from=${$('[name=from]', m).value}&to=${$('[name=to]', m).value}`;
     }));
   };
-  if ($('#raise', view)) $('#raise', view).onclick = () => priceIncreaseModal();
+  // Raising prices can be taken over by a feature (cohorts, notice letters, a start date): NV.override('prices.raise').
+  if ($('#raise', view)) $('#raise', view).onclick = () => NV.run('prices.raise', {}, () => priceIncreaseModal());
 }
 
 async function pageAging(view) {
@@ -1479,7 +1497,29 @@ async function pageReviews(view, _id, params) {
 }
 
 // ---------- Platform owner: every company on the system ----------
-async function pagePlatform(view) {
+async function pagePlatform(view, _id, params = {}) {
+  // The link from the confirmation email: it only counts for the login that asked for it.
+  if (params.confirm) {
+    history.replaceState(null, '', '#/platform');
+    try {
+      await api('/nuvolve/app/api/platform/confirm', { body: { token: params.confirm } });
+      Object.assign(BOOT.me, { isPlatformAdmin: true, platformAdminUnconfirmed: false });
+      toast('Your email is confirmed');
+    } catch (e) { toast(e.message, true); }
+  }
+  if (!BOOT.me.isPlatformAdmin) {
+    view.innerHTML = `<div class="page-head"><div><h1>Companies</h1></div></div>
+      <div class="card" style="max-width:560px"><h2>Confirm your email first</h2>
+        <p>Companies shows every company on this server, so we check that ${esc(BOOT.me.email)} is yours. We'll email it a link. Open it on this computer while you're logged in.</p>
+        <button class="btn primary" id="pa-send">Email me a link</button></div>`;
+    $('#pa-send').onclick = async () => {
+      try {
+        const r = await api('/nuvolve/app/api/platform/confirm-email', { method: 'POST' });
+        toast(r.status === 'logged' ? "Email isn't set up on this server, so the link is in the server log" : `Link sent to ${r.to}`);
+      } catch (e) { toast(e.message, true); }
+    };
+    return;
+  }
   const d = await api('/nuvolve/app/api/platform/companies');
   const paying = d.companies.filter((c) => c.status === 'active');
   const mrr = paying.reduce((t, c) => t + Math.max(1, c.routes) * d.pricePerRoute, 0);
@@ -1507,7 +1547,7 @@ async function pageMessages(view) {
       ${rows.map((m) => `<tr><td class="nowrap small">${fmtDate(m.created_at)}</td><td><a href="#/customers/${m.customer_id}">${esc(m.customer_name || m.company || '')}</a><div class="small muted">${esc(m.to_addr || '')}</div></td>
         <td>${m.channel === 'sms' ? '💬 Text' : '✉️ Email'}<div class="small muted">${esc(m.kind)}</div></td>
         <td><details><summary>${esc(m.subject || m.body.slice(0, 60))}</summary><pre style="white-space:pre-wrap;font:inherit;font-size:13px">${esc(m.body)}</pre></details></td>
-        <td>${m.status === 'sent' ? '<span class="pill green">Sent</span>' : m.status === 'failed' ? `<span class="pill red" title="${esc(m.error || '')}">Failed</span>` : '<span class="pill">Saved</span>'}</td></tr>`).join('')}
+        <td>${m.status === 'sent' ? '<span class="pill green">Sent</span>' : m.status === 'failed' ? `<span class="pill red" title="${esc(m.error || '')}">Failed</span>` : ['blocked', 'queued', 'dropped'].includes(m.status) ? `<span class="pill yellow">${m.status === 'queued' ? 'Waiting' : 'Not sent'}</span><div class="small muted">${esc(m.error || '')}</div>` : '<span class="pill">Saved</span>'}</td></tr>`).join('')}
     </tbody></table>` : '<div class="empty"><div class="big">✉️</div><h3>No messages yet</h3><p>Service summaries, reminders and review requests appear here.</p></div>'}</div></div>`;
   $('#run').onclick = async () => { const r = await api('/nuvolve/app/api/reminders/run', { method: 'POST' }); toast(`${r.sent} reminder${r.sent === 1 ? '' : 's'} sent`); route(); };
 }
