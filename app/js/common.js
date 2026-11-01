@@ -24,6 +24,8 @@ async function api(path, opts = {}) {
     const err = new Error(data?.error || 'Something went wrong');
     err.status = res.status;
     err.offline = Boolean(data?.offline);
+    // What else the server said (the label problems on a refused ticket, for one), for the screen that asked.
+    if (data && typeof data === 'object') err.data = data;
     throw err;
   }
   return data;
@@ -456,6 +458,14 @@ function ticketForm(root, visit, products, onDone) {
       if (typeof NV !== 'undefined') NV.emit('ticket.saved', { visit, result });
       onDone(result);
     } catch (err) {
+      // A feature module can answer a refusal itself (the reason for an over-label rate) and send the ticket again.
+      const refused = { root, visit, error: err, handled: false, retry: () => $('#complete', root).click() };
+      if (err.status && typeof NV !== 'undefined') NV.emit('ticket.refused', refused);
+      if (refused.handled) {
+        btn.disabled = false;
+        btn.textContent = 'Complete stop';
+        return;
+      }
       // fetch throws a TypeError (no status) when there's no signal.
       toast(err.status ? err.message : "No signal right now. Your ticket is saved on this phone. Tap Complete again when you're back online.", true);
       btn.disabled = false;

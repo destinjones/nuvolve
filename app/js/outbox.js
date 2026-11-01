@@ -122,7 +122,7 @@
     // Turned down while the tech is looking at it: show it the way the rest of the app does, not as a stuck save.
     await remove(id);
     if (r.status === 422 && r.data?.rules && typeof scope.ruleBlocked === 'function') return scope.ruleBlocked(path, { body }, r.data);
-    throw Object.assign(new Error(r.error || 'Something went wrong'), { status: r.status });
+    throw Object.assign(new Error(r.error || 'Something went wrong'), { status: r.status, data: r.data });
   }
 
   async function counts() {

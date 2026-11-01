@@ -3,6 +3,7 @@ const app = document.getElementById('app');
 let ME = null;
 let PRODUCTS = [];
 let day = todayStr();
+let CLOCK = null; // the time clock as the route page last saw it
 // The tech's language (src/lang/es/tech.js): their account setting, or what they picked on this phone.
 const t = (text, vars) => NV.t(text, vars);
 
@@ -108,6 +109,36 @@ async function drawSync() {
   if ($('#sync-see')) $('#sync-see').onclick = () => NV.emit('tech.conflicts', {});
 }
 
+const SKIP_REASONS = ['Not home', 'Locked gate', 'Dog loose in the yard', 'Rain or high wind', 'Customer asked to reschedule', "Couldn't get in"];
+
+// Cash or a check at the door, on the stop's bill. Card payments go through the customer's pay link or autopay.
+async function collectPayment(visitId, done = () => {}) {
+  if (!navigator.onLine) return done();
+  let v;
+  try { v = await api(`/nuvolve/app/api/visits/${visitId}`); } catch { return done(); }
+  const inv = v.invoice;
+  const due = inv && inv.status === 'open' ? Math.round((inv.amount - inv.amount_paid) * 100) / 100 : 0;
+  if (!(due > 0)) return done();
+  let method = 'cash';
+  const m = modal(t('Collect {amount}?', { amount: money(due) }), `<p class="small muted">${esc(t('Paid at the door? Record it here. Otherwise the customer gets the bill with a pay link.'))}</p>
+    <div class="seg big-seg" id="pay-how"><button type="button" class="on" data-m="cash">💵 ${esc(t('Cash'))}</button><button type="button" data-m="check">🧾 ${esc(t('Check'))}</button></div>
+    <div class="row"><div class="field"><label>${esc(t('Amount'))}</label><input name="amount" type="number" step="0.01" min="0.01" inputmode="decimal" value="${due}"></div>
+    <div class="field" id="pay-ref" hidden><label>${esc(t('Check number'))}</label><input name="reference" inputmode="numeric" maxlength="40"></div></div>`, [
+    { label: t('Bill them later'), onClick: () => { done(); } },
+    { label: t('Record payment'), cls: 'primary', onClick: async (el) => {
+      const f = formData(el);
+      if (method === 'check' && !f.reference) throw new Error(t('Enter the check number'));
+      const r = await api(`/nuvolve/app/api/visits/${visitId}/collect`, { body: { method, amount: f.amount, reference: f.reference } });
+      toast(t('{amount} {method} recorded', { amount: money(r.amount), method: method === 'check' ? t('check') : t('cash') }));
+      done();
+    } }]);
+  $$('#pay-how button', m.el).forEach((b) => (b.onclick = () => {
+    method = b.dataset.m;
+    $$('#pay-how button', m.el).forEach((x) => x.classList.toggle('on', x === b));
+    $('#pay-ref', m.el).hidden = method !== 'check';
+  }));
+}
+
 const SAVE_KIND = { start: 'Start service', complete: 'Completed ticket', skip: 'Skipped stop', photo: 'Photo', choice: 'Your answer on a ticket' };
 async function showFailed() {
   const items = (await Outbox.list()).filter((i) => i.status === 'failed');
@@ -122,6 +153,8 @@ async function showFailed() {
     b.closest('div[style]').remove();
   }));
 }
+// 54.14 hours reads as "54 h 8 min", the way a tech checks their time.
+const hoursText = (h) => { const m = Math.round((Number(h) || 0) * 60); return t('{h} h {m} min', { h: Math.floor(m / 60), m: m % 60 }); };
 const fmtTime = (at) => new Date(at).toLocaleString(dateLocale(), { weekday: 'short', hour: 'numeric', minute: '2-digit' });
 const savedNote = (r) => (r.savedAt ? `<div class="saved-copy">${esc(t('📴 Saved copy from {time}', { time: fmtTime(r.savedAt) }))}</div>` : '');
 
@@ -191,6 +224,11 @@ function login() {
   };
 }
 
+// Each screen draw takes a number. A slow draw that finishes after the tech has already tapped somewhere else is
+// dropped, so the screen they asked for last is the one that stays (and a ticket they're filling in isn't replaced).
+let VIEW = 0;
+const stale = (my) => my !== VIEW;
+
 function show() {
   drawSync();
   if (location.hash === '#/stats') return showStats();
@@ -203,8 +241,10 @@ const tabbar = (on) => `<div class="tabbar"><a href="#/" class="${on === 'route'
 
 // What's on the truck, and the label and SDS for every product, for the customer who asks or the inspector who checks.
 async function showTruck() {
+  const my = ++VIEW;
   const d = await api('/nuvolve/app/api/my-truck');
   const low = d.products.filter((p) => p.par != null && p.on_hand < p.par);
+  if (stale(my)) return;
   app.innerHTML = `
     <div class="top"><h1>🚚 ${esc(d.truck ? d.truck.name : t('Labels & SDS'))}</h1><div class="sub">${esc(d.truck ? (low.length ? t(low.length > 1 ? '{n} products under your truck level' : '{n} product under your truck level', { n: low.length }) : t('Stocked up')) : t("The office hasn't assigned you a truck yet"))}</div></div>
     <div class="wrap"><div class="card flush">
@@ -220,16 +260,19 @@ async function showTruck() {
 
 // Leaderboard and the tech's own numbers. 5-stars and Google reviews earn the most points.
 async function showStats() {
+  const my = ++VIEW;
   let lb, notes, lic, pay;
   try {
     [lb, notes, lic, pay] = await Promise.all([api('/nuvolve/app/api/leaderboard?period=month'), api('/nuvolve/app/api/notifications').catch(() => []), api('/nuvolve/app/api/my-licenses').catch(() => null), api('/nuvolve/app/api/my-pay').catch(() => null)]);
   } catch {
+    if (stale(my)) return;
     app.innerHTML = `<div class="top"><h1>🏆 ${esc(t('This month'))}</h1></div><div class="wrap"><div class="empty"><div class="big">📴</div><h3>${esc(t('No signal'))}</h3><p>${esc(t("Your stats show up when you're back online."))}</p></div></div>${tabbar('stats')}`;
     return;
   }
   api('/nuvolve/app/api/notifications/read', { method: 'POST' }).catch(() => {});
   const p = pay?.show ? pay.line : null;
   const me = lb.rows.find((r) => r.id === ME.id);
+  if (stale(my)) return;
   app.innerHTML = `
     <div class="top"><h1>🏆 ${esc(t('This month'))}</h1><div class="sub">${esc(me ? t(me.points === 1 ? "You're #{rank} of {n} with {points} point" : "You're #{rank} of {n} with {points} points", { rank: me.rank, n: lb.rows.length, points: me.points }) : t('Leaderboard'))}</div></div>
     <div class="wrap">
@@ -296,11 +339,36 @@ function licenseCard({ licenses, ceus }) {
     <button class="btn block" id="log-ceu" style="margin-top:10px">${esc(t('+ Log a class (CEUs)'))}</button></div>`;
 }
 
+// The time clock sits right above the next stop: one tap to start the day.
+function clockCard(clk, r, next) {
+  if (!clk) return '';
+  const since = clk.clockedIn ? new Date(clk.since).toLocaleTimeString(dateLocale(), { hour: 'numeric', minute: '2-digit' }) : '';
+  const nudge = !clk.clockedIn && next && day === todayStr();
+  return `<div class="card clock-card${nudge ? ' nudge' : ''}" style="display:flex;align-items:center;gap:10px;padding:10px 14px">
+    <div style="flex:1">${clk.clockedIn ? `⏱ <b>${esc(t('On the clock'))}</b> ${esc(t('since {time}', { time: since }))}` : `⏱ <b>${esc(t('Off the clock'))}</b>`}
+      <div class="small muted">${esc(t('{hours} this week', { hours: hoursText(clk.weekHours) }))}</div></div>
+    <button class="btn ${clk.clockedIn ? '' : 'primary big'}" id="clock">${esc(clk.clockedIn ? t('Clock out') : t('Clock in'))}</button></div>`;
+}
+
+// Today's last stop is done: what's left before going home (saves still on the phone, and the clock).
+function endOfDay(r, clk) {
+  if (day !== todayStr() || !r.stops.length || r.stops.some((s) => s.status === 'scheduled')) return '';
+  const done = r.stops.filter((s) => s.status === 'completed').length;
+  const skipped = r.stops.filter((s) => s.status === 'skipped').length;
+  return `<div class="card eod" id="eod"><h3 style="margin-top:0">🏁 ${esc(t('Route done'))}</h3>
+    <div>${esc(t('{done} done · {skipped} skipped', { done, skipped }))}</div>
+    ${r.unsent ? `<div class="alert warn" style="margin-top:8px">📴 ${esc(t(r.unsent === 1 ? '{n} save is still on this phone. Stay where there is signal until it sends.' : '{n} saves are still on this phone. Stay where there is signal until they send.', { n: r.unsent }))}</div>`
+    : `<div class="small muted" style="margin-top:4px">✓ ${esc(t('Everything reached the office.'))}</div>`}
+    ${clk?.clockedIn ? `<button class="btn primary big block" id="eod-out" style="margin-top:10px">${esc(t('Clock out for the day'))}</button>` : ''}</div>`;
+}
+
 async function showRoute() {
+  const my = ++VIEW;
   let r, notes, clk;
   try {
     [r, notes, clk] = await Promise.all([api(`/nuvolve/app/api/my-route?date=${day}`), api('/nuvolve/app/api/notifications').catch(() => []), api('/nuvolve/app/api/clock').catch(() => null)]);
   } catch (e) {
+    if (stale(my)) return;
     app.innerHTML = `<div class="top"><h1>${fmtDate(day, { weekday: 'long', month: 'short', day: 'numeric' })}</h1></div><div class="wrap">
       <div class="empty"><div class="big">📴</div><h3>${esc(t('Not saved on this phone'))}</h3><p>${esc(t(e.offline || !e.status ? 'Open this day once with signal to keep it for later.' : e.message))}</p>
       <button class="btn" id="today">${esc(t('Back to today'))}</button></div></div>${tabbar('route')}`;
@@ -311,9 +379,13 @@ async function showRoute() {
   if (!r.savedAt) { Outbox.saw(r.stops).catch(() => {}); Outbox.synced().catch(() => {}); }
   const local = await localState();
   r.stops = r.stops.map((s) => applyLocal(s, local.get(s.id)));
+  CLOCK = clk;
+  const unsent = await Outbox.counts().catch(() => ({ pending: 0, failed: 0, conflicts: 0 }));
+  r.unsent = unsent.pending + unsent.failed + (unsent.conflicts || 0);
   const fresh = notes.filter((n) => !n.read);
   const done = r.stops.filter((s) => s.status !== 'scheduled').length;
   const next = r.stops.find((s) => s.status === 'scheduled');
+  if (stale(my)) return;
   app.innerHTML = `
     <div class="top">
       <div style="display:flex;justify-content:space-between;align-items:center">
@@ -325,16 +397,14 @@ async function showRoute() {
       <div class="daybar">${[-1, 0, 1].map((o) => { const d = addDays(todayStr(), o); return `<button data-d="${d}" class="${d === day ? 'on' : ''}">${fmtDay(d)}</button>`; }).join('')}</div>
     </div>
     <div class="wrap">
-      ${installCard()}
-      ${NV.slots('tech.top', { r })}
-      ${clk ? `<div class="card" style="display:flex;align-items:center;gap:10px;padding:10px 14px">
-        <div style="flex:1">${clk.clockedIn ? `⏱ <b>${esc(t('On the clock'))}</b> ${esc(t('since {time}', { time: new Date(clk.since).toLocaleTimeString(dateLocale(), { hour: 'numeric', minute: '2-digit' }) }))}` : `⏱ <b>${esc(t('Off the clock'))}</b>`}
-          <div class="small muted">${esc(NV.tn(clk.weekHours, '{n} hour this week', '{n} hours this week'))}</div></div>
-        <button class="btn ${clk.clockedIn ? '' : 'primary'}" id="clock">${esc(clk.clockedIn ? t('Clock out') : t('Clock in'))}</button></div>` : ''}
-      ${fresh.length ? `<a href="#/stats" class="alert ok" style="text-decoration:none">🎉 ${esc(t(fresh[0].text))}${fresh.length > 1 ? ` ${esc(t('(+{n} more)', { n: fresh.length - 1 }))}` : ''}</a>` : ''}
-      ${next ? `<a class="btn primary big block" href="#/stop/${next.id}" style="margin-bottom:12px">${esc(t('▶ Next stop: {name}', { name: next.company || [next.first_name, next.last_name].filter(Boolean).join(' ') }))}</a>` : ''}
+      ${clockCard(clk, r, next)}
+      ${next ? `<a class="btn primary big block" id="next-stop" href="#/stop/${next.id}" style="margin-bottom:12px">${esc(t('▶ Next stop: {name}', { name: next.company || [next.first_name, next.last_name].filter(Boolean).join(' ') }))}</a>` : ''}
+      ${endOfDay(r, clk)}
       ${r.plan?.after_hours ? `<div class="small" style="text-align:center;margin:-4px 0 10px;color:var(--warn,#b7791f)">${esc(t('The day ended at {time} with {n} stops still open. Check with the office before you go on.', { time: r.plan.end_text, n: r.plan.open_stops }))}</div>` : ''}
       ${r.plan?.finish_text ? `<div class="small muted" style="text-align:center;margin:-4px 0 10px">${esc(t('About {min} min of driving left · done around {time}', { min: r.plan.drive_min, time: r.plan.finish_text }))}</div>` : ''}
+      ${installCard()}
+      ${NV.slots('tech.top', { r })}
+      ${fresh.length ? `<a href="#/stats" class="alert ok" style="text-decoration:none">🎉 ${esc(t(fresh[0].text))}${fresh.length > 1 ? ` ${esc(t('(+{n} more)', { n: fresh.length - 1 }))}` : ''}</a>` : ''}
       ${r.summary.mapsUrl ? `<a class="btn block" href="${esc(r.summary.mapsUrl)}" target="_blank" style="margin-bottom:12px">${esc(t('🗺️ Whole route in Google Maps'))}${r.summary.miles ? ` (~${r.summary.miles} mi)` : ''}</a>` : ''}
       ${r.stops.length ? r.stops.map((s, i) => `<div class="tstop-wrap"><a class="tstop ${s.status}" href="#/stop/${s.id}">
         <div class="n">${s.status === 'completed' ? '✓' : i + 1}</div>
@@ -369,6 +439,7 @@ async function showRoute() {
     shareLocation();
   };
   gpsBadge();
+  if ($('#eod-out')) $('#eod-out').onclick = () => $('#clock')?.click();
   if ($('#clock')) $('#clock').onclick = async (e) => {
     e.target.disabled = true;
     try { await api('/nuvolve/app/api/clock', { body: { action: clk.clockedIn ? 'out' : 'in' } }); toast(clk.clockedIn ? t('Clocked out. Nice work!') : t('Clocked in')); } catch (err) { toast(err.message, true); }
@@ -377,10 +448,12 @@ async function showRoute() {
 }
 
 async function showStop(id) {
+  const my = ++VIEW;
   let v;
   try {
     v = await api(`/nuvolve/app/api/visits/${id}`);
   } catch (e) {
+    if (stale(my)) return;
     app.innerHTML = `<div class="top"><a href="#/" style="color:#a8c3b4;text-decoration:none">← ${esc(t('Route'))}</a></div><div class="wrap"><div class="empty"><div class="big">📴</div>
       <h3>${esc(t("This stop isn't saved on this phone"))}</h3><p>${esc(t(e.offline || !e.status ? 'Open it once with signal and it stays on the phone for later.' : e.message))}</p></div></div>`;
     return;
@@ -394,6 +467,7 @@ async function showStop(id) {
   if (turnedDown) { try { if (!localStorage.getItem(`nv_ticket_${v.id}`)) localStorage.setItem(`nv_ticket_${v.id}`, JSON.stringify(turnedDown.body)); } catch { /* private mode */ } }
   const name = (v.customer_type === 'commercial' && v.company) || v.customer_name || v.company;
   const done = v.status !== 'scheduled';
+  if (stale(my)) return;
   app.innerHTML = `
     <div class="top"><a href="#/" style="color:#a8c3b4;text-decoration:none">← Route</a>
       <h1 style="margin-top:6px">${esc(name)}</h1><div class="sub">${esc(v.service_name ? t(v.service_name) : t('Service'))} · ${money(v.price)}</div>${savedNote(v)}</div>
@@ -415,24 +489,26 @@ async function showStop(id) {
         ${v.office_notes ? `<div class="alert info">📝 ${esc(v.office_notes)}</div>` : ''}
         ${v.customer_notes ? `<p class="small muted">${esc(v.customer_notes)}</p>` : ''}
       </div>
+      ${done ? '' : v.started_at
+    ? `<div class="alert ok" style="justify-content:space-between">⏱️ On site <span class="timer" id="timer"></span></div>`
+    : '<button class="btn primary big block" id="start" style="margin-bottom:12px">▶ Start service (I\'m here)</button>'}
       ${NV.slots('tech.stop', { v })}
       ${/termite|wdi|wood.destroying/i.test(v.service_name || '') || v.devices.some((d) => ['termite', 'termite_ag'].includes(d.type)) ? `<div class="card"><h3>🐜 Termite</h3>
         <div class="bigbtns"><a class="btn" href="/nuvolve/app/graph.html?property=${v.property_id}">📐 Graph</a><button type="button" class="btn" id="wdi">📝 WDI report</button></div></div>` : ''}
       ${v.history.length ? `<div class="card"><h3>Last visits</h3>${v.history.slice(0, 3).map((h) => `<div class="small" style="padding:6px 0;border-bottom:1px solid var(--line)"><b>${fmtDate(h.date)}</b> ${esc(h.target_pests || '')}<br>${esc(h.tech_notes || '')}
         ${h.internal_notes ? `<div class="office-note-view">🔒 ${esc(h.internal_notes)}</div>` : ''}</div>`).join('')}</div>` : ''}
-      ${done ? '' : v.started_at
-    ? `<div class="alert ok" style="justify-content:space-between">⏱️ On site <span class="timer" id="timer"></span></div>`
-    : '<button class="btn primary big block" id="start" style="margin-bottom:12px">▶ Start service (I\'m here)</button>'}
       <div class="card">
         ${v.needsFix ? `<div class="alert warn">⚠️ ${esc(t("This was saved with no signal, but the office's system turned it down: {error} Fix it below and save again.", { error: t(v.needsFix) }))}</div>` : ''}
         ${v.waiting ? `<div class="alert info">⏳ Saved on this phone. It sends by itself when you have signal${v.status === 'completed' ? ', and the customer gets their report then' : ''}.</div>` : ''}
         ${done ? `<h2>${v.status === 'completed' ? '✅ Completed' : 'Skipped'}</h2><p>${esc(v.tech_notes || '')}</p>
           ${v.internal_notes ? `<div class="office-note-view">🔒 ${esc(v.internal_notes)}</div>` : ''}
+          ${v.status === 'completed' && !v.waiting && v.invoice?.status === 'open' && v.invoice.amount > v.invoice.amount_paid ? `<button type="button" class="btn primary big block" id="collect" style="margin-bottom:8px">💵 ${esc(t('Collect payment ({amount} due)', { amount: money(v.invoice.amount - v.invoice.amount_paid) }))}</button>` : ''}
           ${v.status === 'completed' && !v.waiting ? `<a class="btn block" href="/nuvolve/app/api/visits/${v.id}/report" target="_blank" rel="noopener">🧪 Show the customer their service report</a>` : ''}`
           : `<h2>Service ticket</h2><div id="ticket"></div><button class="btn block" id="skip" style="margin-top:10px">Can't do it today (skip)</button>`}
       </div>
     </div>`;
   $('#nav').onclick = () => navigateTo(v);
+  if ($('#collect')) $('#collect').onclick = () => collectPayment(v.id, () => showStop(id));
   NV.emit('tech.stop.rendered', { v, root: app });
   // Texts the customer the arrival time, the tech's photo and a live tracking link.
   if ($('#omw')) $('#omw').onclick = async (e) => {
@@ -455,8 +531,23 @@ async function showStop(id) {
   // A deleted house photo falls back to the satellite view.
   if ($('#house-img')) $('#house-img').onerror = (e) => { if (v.lat != null && !e.target.dataset.fell) { e.target.dataset.fell = 1; e.target.src = housePhoto(v, 780, 420); } else e.target.closest('.house-pic').remove(); };
   clearInterval(window.onSiteTimer);
-  if ($('#start')) $('#start').onclick = async () => {
+  const startNow = async () => {
     try { await saveOrQueue(`/nuvolve/app/api/visits/${v.id}/start`, { at: new Date().toISOString() }, { kind: 'start', visitId: v.id }); showStop(id); } catch (e) { toast(e.message, true); }
+  };
+  // Starting today's stop off the clock: offer to clock in first, in the same tap.
+  if ($('#start')) $('#start').onclick = async () => {
+    // Opened straight to the stop (a link, an alert): ask the clock now.
+    if (!CLOCK && navigator.onLine && v.date === todayStr()) CLOCK = await api('/nuvolve/app/api/clock').catch(() => null);
+    if (!CLOCK || CLOCK.clockedIn || v.date !== todayStr() || !navigator.onLine) return startNow();
+    const m = modal(t("You're off the clock"), `<p>${esc(t('Clock in now so this stop counts on your time card?'))}</p>
+      <button type="button" class="btn primary big block" id="clock-start">⏱ ${esc(t('Clock in and start'))}</button>
+      <button type="button" class="btn block" id="just-start" style="margin-top:8px">${esc(t('Start without clocking in'))}</button>`, []);
+    $('#clock-start', m.el).onclick = async () => {
+      m.close();
+      try { CLOCK = await api('/nuvolve/app/api/clock', { body: { action: 'in' } }); toast(t('Clocked in')); } catch (e) { toast(e.message, true); }
+      startNow();
+    };
+    $('#just-start', m.el).onclick = () => { m.close(); startNow(); };
   };
   if ($('#timer')) {
     const t0 = new Date(v.started_at.replace(' ', 'T') + 'Z');
@@ -470,9 +561,14 @@ async function showStop(id) {
   if (!done) {
     ticketForm($('#ticket'), v, PRODUCTS, (r) => {
       toast(r.queued ? "Saved on this phone. It sends when you're back online." : r.autopay?.charged ? `Done! Card charged ${money(r.autopay.amount)}` : 'Stop completed');
+      // A bill and no card on file: offer to take cash or a check before leaving the door.
+      const left = new Promise((ok) => window.addEventListener('hashchange', ok, { once: true }));
       location.hash = '#/';
+      if (!r.queued && r.invoiceId && !r.autopay?.charged) left.then(() => collectPayment(v.id));
     });
-    $('#skip').onclick = () => modal('Skip this stop?', '<div class="field"><label>Why?</label><input name="reason" placeholder="Not home, locked gate, rain..."></div>', [
+    $('#skip').onclick = () => { const sm = modal('Skip this stop?', `<div class="field"><label>Why?</label>
+      <div class="chips quick" id="skip-why" style="margin-bottom:10px">${SKIP_REASONS.map((r) => `<button type="button" class="chip" data-v="${esc(t(r))}">${esc(t(r))}</button>`).join('')}</div>
+      <input name="reason" placeholder="Not home, locked gate, rain..."></div>`, [
       { label: 'Back' },
       { label: 'Skip stop', cls: 'primary', onClick: async (m) => {
         const r = await saveOrQueue(`/nuvolve/app/api/visits/${v.id}/skip`, { ...formData(m), at: new Date().toISOString() }, { kind: 'skip', visitId: v.id });
@@ -480,6 +576,9 @@ async function showStop(id) {
         location.hash = '#/';
       } },
     ]);
+    // One tap fills the reason; the tech can still add to it.
+    $$('#skip-why .chip', sm.el).forEach((c) => (c.onclick = () => { $$('#skip-why .chip', sm.el).forEach((x) => x.classList.toggle('on', x === c)); $('[name=reason]', sm.el).value = c.dataset.v; }));
+    };
   }
 }
 
