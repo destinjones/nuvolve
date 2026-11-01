@@ -1,12 +1,23 @@
 // Runs first on every demo page: makes sure the demo's stand-in server (demo-sw.js) is answering,
 // keeps the calendar on the day the demo company was recorded, and adds the small demo menu and save bar.
 (function () {
-  var APP = '/nuvolve/app', SITE = '/nuvolve', TODAY = '2026-10-31';
+  var APP = '/nuvolve/app', SITE = '/nuvolve', TODAY = '2026-11-02', SIGNUP = '/nuvolve/#waitlist';
+  // This copy of the app has no server, so it can't open an account. Its sign-up form would take six fields and
+  // go nowhere; send people to the real sign-up (built with --live) or the waitlist instead.
+  function noFakeSignup() { if (location.hash === '#signup') location.replace(SIGNUP); }
+  noFakeSignup();
+  window.addEventListener('hashchange', noFakeSignup);
   if (!('serviceWorker' in navigator)) return;
   if (!navigator.serviceWorker.controller) {
     location.replace(APP + '/start.html?next=' + encodeURIComponent(location.pathname + location.search + location.hash));
     return;
   }
+
+  // There's no server behind the demo, so its sign-up form can't open an account. Send visitors to the
+  // early-access page instead of letting them fill in a form that goes nowhere.
+  var BETA = (SITE === '/' ? '' : SITE) + '/beta.html?from=demo-signup';
+  if (location.hash === '#signup') { location.replace(BETA); return; }
+  window.addEventListener('hashchange', function () { if (location.hash === '#signup') location.replace(BETA); });
 
   // The demo company's "today" is the day it was recorded, so routes, the schedule and past-due all line up.
   var Real = Date;

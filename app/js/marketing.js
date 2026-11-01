@@ -108,6 +108,12 @@ function campaignModal(d, tpl, camp) {
     <div class="field"><label>Email</label><textarea name="body" rows="9">${esc(c.body)}</textarea>
       <div class="hint">Fill-ins: {first_name} {service} {offer} {portal_link} {referral_link} {company_name} {company_phone}. An opt-out link is added at the bottom.</div></div>
     <div class="field"><label>Text message (sent only if texting is on)</label><textarea name="sms" rows="2">${esc(c.sms || '')}</textarea></div>
+    <details ${c.subject_es || c.body_es || c.sms_es ? 'open' : ''}><summary><b>Spanish version (optional)</b> <span class="small muted">for customers whose language is Spanish; a part left blank goes in English</span></summary>
+      ${NV.spanishField('offer_es', 'offer', { value: c.offer_es, maxlength: 200, label: 'Offer in Spanish', what: 'a special offer in a marketing email' })}
+      ${NV.spanishField('subject_es', 'subject', { value: c.subject_es, maxlength: 200, label: 'Email subject in Spanish', what: 'the subject line of a marketing email' })}
+      ${NV.spanishField('body_es', 'body', { value: c.body_es, rows: 7, maxlength: 5000, label: 'Email in Spanish', what: 'a marketing email; keep the {fill_ins} as they are' })}
+      ${NV.spanishField('sms_es', 'sms', { value: c.sms_es, rows: 2, maxlength: 320, label: 'Text message in Spanish', what: 'a marketing text message; keep the {fill_ins} as they are' })}
+    </details>
     <div class="field"><label>Send date (leave empty to send by hand)</label><input name="send_on" type="date" min="${todayStr()}" value="${esc(c.send_on || '')}"></div>
     <div id="cm-preview" class="alert" style="display:block"><span class="muted">Save to see who it goes to.</span></div>`,
   [
@@ -132,7 +138,8 @@ function campaignModal(d, tpl, camp) {
   async function save(el, schedule) {
     const f = formData(el);
     const body = { name: f.name, service_type_id: f.service_type_id || null, audience: f.audience, audience_params: f.audience === 'zip' ? { zips: f.zips } : {},
-      offer: f.offer, subject: f.subject, body: f.body, sms: f.sms, send_on: f.send_on || null, kind: c.kind };
+      offer: f.offer, subject: f.subject, body: f.body, sms: f.sms, send_on: f.send_on || null, kind: c.kind,
+      offer_es: f.offer_es, subject_es: f.subject_es, body_es: f.body_es, sms_es: f.sms_es };
     if (schedule !== null) body.schedule = schedule;
     const r = id ? await api(`/nuvolve/app/api/campaigns/${id}`, { method: 'PUT', body }) : await api('/nuvolve/app/api/campaigns', { body });
     id = r.id;
@@ -141,7 +148,9 @@ function campaignModal(d, tpl, camp) {
     const p = await api(`/nuvolve/app/api/campaigns/${id}/preview`);
     $('#cm-preview', m.el).innerHTML = `<div><b>${p.count} customer${p.count === 1 ? '' : 's'}</b> <span class="small muted">(${p.withEmail} by email, ${p.withPhone} have a phone)</span>
       ${p.names.length ? `<div class="small muted">${p.names.map(esc).join(', ')}${p.count > p.names.length ? '...' : ''}</div>` : ''}
-      <pre class="small" style="white-space:pre-wrap;margin:8px 0 0;max-height:220px;overflow:auto"><b>${esc(p.sample.subject)}</b>\n\n${esc(p.sample.body)}</pre></div>`;
+      <pre class="small" style="white-space:pre-wrap;margin:8px 0 0;max-height:220px;overflow:auto"><b>${esc(p.sample.subject)}</b>\n\n${esc(p.sample.body)}</pre>
+      ${p.sample_es ? `<div class="small" style="margin-top:8px"><b>En español</b> <span class="muted">(${p.spanishCount} customer${p.spanishCount === 1 ? '' : 's'} use Spanish)</span></div>
+        <pre class="small" lang="es" style="white-space:pre-wrap;margin:4px 0 0;max-height:220px;overflow:auto"><b>${esc(p.sample_es.subject)}</b>\n\n${esc(p.sample_es.body)}</pre>` : ''}</div>`;
   }
   if (id) showPreview().catch(() => {});
 }

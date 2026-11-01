@@ -48,7 +48,7 @@ async function pageDispatch(view, _id, params) {
           <div style="display:flex;gap:10px;align-items:center">
             <button type="button" class="link-btn" style="text-decoration:none" data-face="${t.id}" title="${BOOT.me.isAdmin ? 'Change photo' : ''}">${techFace(t)}</button>
             <div style="flex:1;min-width:0"><b>${esc(t.name)}</b> <span class="pill ${cls}">${label}</span>
-              <div class="small muted">${t.done} of ${t.total} stops done${t.plan.finish_text ? ` · done around ${esc(t.plan.finish_text)}` : ''}${t.plan.overtime_min ? ` <span style="color:var(--danger)">(+${t.plan.overtime_min} min over)</span>` : ''}</div>
+              <div class="small muted">${t.done} of ${plural(t.total, 'stop')} done${t.plan.finish_text ? ` · done around ${esc(t.plan.finish_text)}` : ''}${t.plan.overtime_min ? ` <span style="color:var(--danger)">(+${t.plan.overtime_min} min over)</span>` : ''}</div>
               ${t.ping && !t.ping.fresh ? `<div class="small muted">Last seen ${Math.round(t.ping.age_min)} min ago</div>` : ''}
             </div>
           </div>

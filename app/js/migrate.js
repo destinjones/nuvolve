@@ -29,7 +29,6 @@ const SWITCH_HELP = {
 };
 const WIZ_STEPS = ['Files', 'Columns', 'Duplicates', 'Check', 'Done'];
 const DUP_CHOICES = [['merge', 'Merge into existing'], ['separate', 'Create new'], ['skip', 'Skip']];
-const plural = (n, word, many = `${word}s`) => `${n} ${n === 1 ? word : many}`;
 
 async function pageSwitch(view) {
   const [history, d, savedList] = await Promise.all([api('/nuvolve/app/api/migrate/history'), api('/nuvolve/app/api/settings'), api('/nuvolve/app/api/migrate/mappings').catch(() => [])]);

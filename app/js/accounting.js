@@ -29,7 +29,7 @@ function payLineCells(l) {
   const extra = l.min_top_up ? `<div class="small muted">+ ${money(l.min_top_up)} to reach ${money(l.min_hourly)}/hr</div>` : l.salary ? `<div class="small muted">Salary</div>` : '';
   return `<td><span class="dot" style="background:${esc(l.color || '#999')}"></span><b>${esc(l.name)}</b><div class="small muted">${PAY_TYPE[l.pay_type] || ''}${l.pay_type === 'hourly' ? ` · ${money(l.hourly_rate)}/hr` : l.pay_type === 'production' ? ` · ${l.production_pct}%` : ''}</div></td>
     <td class="right">${hrs(l.hours)}${l.ot ? `<div class="small muted">${hrs(l.ot)} OT</div>` : ''}<div style="white-space:nowrap"><span class="pill ${col}" style="font-size:11px">${src}</span>${l.open_punches ? ' <span class="pill red" style="font-size:11px">still clocked in</span>' : ''}</div></td>
-    <td class="right">${money(l.production)}<div class="small muted">${l.stops} stops</div>${(l.production_notes || []).map((n) => `<div class="small muted" style="max-width:260px;margin-left:auto">${esc(n)}</div>`).join('')}</td>
+    <td class="right">${money(l.production)}<div class="small muted">${plural(l.stops, 'stop')}</div>${(l.production_notes || []).map((n) => `<div class="small muted" style="max-width:260px;margin-left:auto">${esc(n)}</div>`).join('')}</td>
     <td class="right">${money(l.base + l.min_top_up + l.salary)}${extra}</td>
     <td class="right">${money(l.commission)}${l.sales ? `<div class="small muted">${l.sales} sold</div>` : ''}</td>
     <td class="right">${money(l.ot_premium)}</td>
@@ -256,7 +256,7 @@ async function acctQuickbooks(box, params) {
       <div class="stat ${s.pendingInvoices ? 'warn' : ''}"><div class="label">Invoices waiting</div><div class="value">${s.pendingInvoices}</div><div class="sub">from ${fmtDate(s.startDate)} on</div></div>
       <div class="stat"><div class="label">In QuickBooks</div><div class="value">${s.linked.invoice || 0}</div><div class="sub">${s.linked.customer || 0} customers · ${s.linked.payment || 0} payments</div></div>
     </div>
-    ${last ? `<div class="alert ${last.errors ? 'warn' : 'ok'}">Last sync: ${last.customers} customers, ${last.items} services, ${last.invoices} invoices and ${last.payments} payments sent${last.voided ? `, ${last.voided} voided` : ''}${last.unchanged ? `, ${last.unchanged} already up to date` : ''}.${last.errors ? ` ${last.errors} problem${last.errors === 1 ? '' : 's'}: ${esc(last.messages.join(' · '))}` : ''}</div>` : ''}
+    ${last ? `<div class="alert ${last.errors ? 'warn' : 'ok'}">Last sync: ${last.customers} customers, ${last.items} services, ${last.invoices} invoices and ${last.payments} payments sent${last.credits ? `, ${last.credits} credit${last.credits === 1 ? '' : 's'} as credit memos` : ''}${last.voided ? `, ${last.voided} voided` : ''}${last.unchanged ? `, ${last.unchanged} already up to date` : ''}.${last.errors ? ` ${last.errors} problem${last.errors === 1 ? '' : 's'}: ${esc(last.messages.join(' · '))}` : ''}</div>` : ''}
     <div class="actions" style="margin-bottom:14px"><button class="btn primary" id="sync">⇅ Sync now</button>${s.mode === 'mock' ? '<button class="btn" id="peek">See practice QuickBooks</button>' : ''}<button class="btn" id="disc">Disconnect</button></div>
     <div class="grid cols-2">
       <form class="card" id="qb-cfg"><h2>Where things go</h2>

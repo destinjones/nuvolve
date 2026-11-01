@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+Disallow: /nuvolve/app/
+
+Sitemap: https://destinjones.github.io/nuvolve/sitemap.xml

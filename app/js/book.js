@@ -44,6 +44,10 @@ async function load() {
     const body = formData(e.target);
     body.service_type_id = $('input[name=service_type_id]:checked', e.target)?.value || '';
     if (referral?.referrer) body.ref = ref;
+    // Where the link was posted (?src=gbp on the Google Business Profile "Book" button, or utm_source), for lead sources.
+    const q = new URLSearchParams(location.search);
+    const src = (q.get('src') || q.get('utm_source') || '').slice(0, 40);
+    if (src) body.src = src;
     if (!body.phone && !body.email) return toast('Add a phone number or email so we can reach you', true);
     btn.disabled = true;
     try {

@@ -306,6 +306,7 @@ async function retryNow(id, btn) {
     if (r.charged && r.case?.status === 'recovered') toast(`Charged ${money(r.charged)}. They're paid up.`);
     else if (r.charged) toast(`Charged ${money(r.charged)}. Some is still owed.`);
     else if (r.recovered || r.closed) toast('Nothing is owed any more, so the case is closed.');
+    else if (r.technical) toast(r.reason || "Couldn't reach the card processor. The card wasn't declined.", true);
     else toast(`Declined again${r.reason ? `: ${r.reason}` : ''}`, true);
     redraw();
   } catch (e) { toast(e.message, true); if (btn) btn.disabled = false; }
@@ -358,7 +359,7 @@ async function caseModal(id) {
       ${k.attempts} of ${k.tries} retries done${open && k.next_retry_at ? ` · next try ${esc(when(k.next_retry_at))}` : ''}</p>
     <p class="small">${k.method ? `On file: ${esc(k.method)}` : 'No card or bank account on file.'}${k.hard_decline ? ' <b style="color:var(--danger)">The bank said not to try this card again:</b> they need a new one.' : ''}
       ${k.lang === 'es' ? ' Messages go in Spanish.' : ''}</p>
-    ${k.invoices.length ? `<div class="small" style="margin-bottom:10px">${k.invoices.map((i) => `<a href="/nuvolve/app/api/invoices/${i.id}/view" target="_blank" rel="noopener">Invoice #${i.id}</a> ${money(i.due)} ${statusPill(i.status)}`).join('<br>')}</div>` : ''}
+    ${k.invoices.length ? `<div class="small" style="margin-bottom:10px">${k.invoices.map((i) => `<a href="/nuvolve/app/api/invoices/${i.id}/view" target="_blank" rel="noopener">Invoice ${esc(i.number || `#${i.id}`)}</a> ${money(i.due)} ${statusPill(i.status)}`).join('<br>')}</div>` : ''}
     <h3>What happened</h3>
     <div style="max-height:240px;overflow:auto">${k.events.map((ev) => `<div class="small" style="padding:6px 0;border-bottom:1px solid var(--line)">
       <b>${esc(EVENT[ev.kind] || ev.kind)}</b> <span class="muted">${esc(when(ev.at))}</span>${ev.detail ? `<div>${esc(eventDetail(ev))}</div>` : ''}</div>`).join('')}</div>
@@ -1158,6 +1159,1095 @@ NV.on('portal.rendered', ({ data, root }) => {
 
 })(); } catch (e) { console.error('feature callbacks.js failed to load', e); }
 
+/* ---- features/demo-sandbox.js ---- */
+try { (function () {
+// The live demo's bar: this is your own copy of the demo company, when it goes away, and who to view it as.
+(() => {
+  if (window.__nvDemoBar) return;
+  window.__nvDemoBar = true;
+  fetch('/nuvolve/app/api/demo-sandbox', { credentials: 'same-origin' }).then((r) => (r.ok ? r.json() : null)).then((d) => {
+    if (!d || !d.sandbox) return;
+    const until = new Date(`${d.expires_at.replace(' ', 'T')}Z`).toLocaleString('en-US', { weekday: 'short', hour: 'numeric', minute: '2-digit' });
+    const names = { owner: 'Owner', office: 'Office rep', manager: 'Branch manager', tech: 'Technician', sales: 'Sales rep', portal: 'Customer' };
+    const bar = document.createElement('div');
+    bar.id = 'nv-live-demo';
+    bar.setAttribute('role', 'status');
+    bar.style.cssText = 'position:fixed;left:50%;transform:translateX(-50%);bottom:10px;z-index:9999;background:#0b1210;color:#cfe3d7;border:1px solid #2f855a;border-radius:999px;padding:5px 6px 5px 14px;font:500 12px/1.3 system-ui,sans-serif;display:flex;gap:8px;align-items:center;max-width:calc(100vw - 24px);box-shadow:0 4px 14px rgba(0,0,0,.25)';
+    bar.innerHTML = `<span>Live demo: your own copy of a made-up company, deleted ${until}.</span>
+      <select aria-label="View as" style="background:#17241e;color:#7ee2a8;border:1px solid #2f855a;border-radius:999px;padding:3px 8px;font:inherit">
+        <option value="">View as…</option>${d.roles.map((r) => `<option value="${r}">${names[r] || r}</option>`).join('')}</select>`;
+    bar.querySelector('select').onchange = (e) => { if (e.target.value) location.href = `/demo?as=${e.target.value}`; };
+    (document.body ? Promise.resolve() : new Promise((r) => document.addEventListener('DOMContentLoaded', r))).then(() => document.body.appendChild(bar));
+  }).catch(() => {});
+})();
+
+})(); } catch (e) { console.error('feature demo-sandbox.js failed to load', e); }
+
+/* ---- features/field-tech.js ---- */
+try { (function () {
+// The tech at the stop: offer an add-on at the door (with the customer's signature, and the tech's commission shown up
+// front), report damage, a sting, a spill or an injury with photos, and work a wildlife job (set and check traps, log
+// exclusion repairs). Server side: src/features/upsell.js, incidents.js and wildlife.js. Everything here is read by a
+// tech, so it all goes through NV.t (Spanish in src/lang/es/field-app.js).
+(function () {
+  if (!/^\/tech/.test(location.pathname)) return;
+  const t = (text, vars) => NV.t(text, vars);
+  const sel = (name, list, cur) => `<select name="${name}">${list.map(([v, l]) => `<option value="${esc(v)}" ${String(v) === String(cur) ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>`;
+  const FREQ = () => [['monthly', t('Monthly')], ['bimonthly', t('Every 2 months')], ['quarterly', t('Quarterly')], ['yearly', t('Yearly')]];
+  const again = () => window.dispatchEvent(new HashChangeEvent('hashchange'));
+
+  // ---------- add-on at the door ----------
+  NV.slot('tech.stopActions', ({ v }) => (['scheduled', 'completed'].includes(v.status) && !v.waiting ? `<button type="button" class="btn big" data-ft="upsell">💰 ${esc(t('Offer an add-on'))}</button>` : ''));
+  NV.slot('tech.stopActions', ({ v }) => (v.waiting ? '' : `<button type="button" class="btn big" data-ft="incident">⚠️ ${esc(t('Report a problem'))}</button>`));
+
+  async function upsell(v) {
+    let d;
+    try { d = await api(`/nuvolve/app/api/visits/${v.id}/upsell`); } catch (e) { return toast(e.message, true); }
+    if (!d.offers.length) return toast(t('Your office has not picked any add-on services yet.'), true);
+    const offerFor = (id) => d.offers.find((o) => String(o.id) === String(id));
+    const m = modal(t('Offer an add-on'), `
+      ${d.sold.length ? `<div class="alert ok">${esc(t('Already sold at this stop: {list}', { list: d.sold.map((s) => t(s.service_name)).join(', ') }))}</div>` : ''}
+      <div class="field"><label>${esc(t('Service'))}</label>${sel('service_type_id', d.offers.map((o) => [o.id, `${t(o.name)} · ${money(o.price)}${o.has_plan ? ` (${t('already on a plan')})` : ''}`]), d.offers.find((o) => !o.has_plan)?.id)}</div>
+      <div class="small muted" id="ups-desc"></div>
+      <div class="field"><label>${esc(t('When'))}</label>${sel('kind', [['today', t('Today, while I am here')], ['later', t('Another day')], ['plan', t('A recurring plan')]], 'today')}</div>
+      <div class="row"><div class="field" id="ups-date" hidden><label>${esc(t('Day'))}</label><input type="date" name="date" min="${todayStr()}" value="${addDays(todayStr(), 7)}"></div>
+        <div class="field" id="ups-freq" hidden><label>${esc(t('How often'))}</label>${sel('frequency', FREQ(), 'quarterly')}</div>
+        <div class="field"><label>${esc(t('Price'))}</label><input type="number" name="price" step="0.01" min="0" inputmode="decimal"></div></div>
+      <div class="alert info" id="ups-com"></div>
+      <div class="field"><label>${esc(t('Customer signature'))}</label><canvas id="ups-sig" style="width:100%;height:140px;border:1px solid var(--line);border-radius:8px;background:#fff;touch-action:none"></canvas>
+        <button type="button" class="link-btn small" id="ups-clear">${esc(t('Clear signature'))}</button></div>
+      <label class="check"><input type="checkbox" name="verbal"> ${esc(t('They said yes out loud (no signature)'))}</label>
+      <div class="field"><label>${esc(t('Note for the office (optional)'))}</label><input name="note" maxlength="500"></div>`, [
+      { label: t('Cancel') },
+      { label: t('Sell it'), cls: 'primary', onClick: async (el) => {
+        const f = formData(el);
+        const r = await api(`/nuvolve/app/api/visits/${v.id}/upsell`, { body: { ...f, signature: pad.value(), verbal: f.verbal } });
+        toast(r.kind === 'today' ? t('Added to today. Your commission: {amount}', { amount: money(r.commission) }) : t('Booked. Your commission when it is done: {amount}', { amount: money(r.commission) }));
+        if (r.kind === 'today' && r.new_visit_id) location.hash = `#/stop/${r.new_visit_id}`;
+      } }]);
+    const pad = signaturePad($('#ups-sig', m.el));
+    $('#ups-clear', m.el).onclick = () => pad.clear();
+    const draw = (fresh) => {
+      const f = formData(m.el);
+      const o = offerFor(f.service_type_id);
+      if (fresh) $('[name=price]', m.el).value = o.price;
+      $('#ups-date', m.el).hidden = f.kind !== 'later';
+      $('#ups-freq', m.el).hidden = f.kind !== 'plan';
+      $('#ups-desc', m.el).textContent = [o.description ? t(o.description) : '', o.min_price ? t('Lowest price: {price}', { price: money(o.min_price) }) : ''].filter(Boolean).join(' · ');
+      const price = Number($('[name=price]', m.el).value) || 0;
+      // The server has the exact rule; this is the same math for the price typed.
+      const rate = o.price ? (f.kind === 'plan' ? o.commission_plan : o.commission) / o.price : 0;
+      $('#ups-com', m.el).textContent = `💵 ${t('Your commission: {amount}', { amount: money(Math.round(price * rate * 100) / 100) })}${f.kind === 'plan' ? ` · ${t('paid once the first visit is done')}` : ''}`;
+    };
+    m.el.addEventListener('change', (e) => draw(e.target.name === 'service_type_id'));
+    m.el.addEventListener('input', (e) => { if (e.target.name === 'price') draw(false); });
+    draw(true);
+  }
+
+  // ---------- incidents ----------
+  const KINDS = () => [['property_damage', t('Property damage')], ['sting_bite', t('Sting or bite')], ['spill', t('Spill')], ['injury', t('Injury')], ['pet', t('Pet')], ['vehicle', t('Vehicle')], ['other', t('Other')]];
+  function incident(v) {
+    const photos = [];
+    const m = modal(t('Report a problem'), `<p class="small muted">${esc(t('Damage, a sting or bite, a spill, an injury. Tell the office now, with photos, even if it seems small.'))}</p>
+      <div class="row"><div class="field"><label>${esc(t('What happened'))}</label>${sel('kind', KINDS(), 'property_damage')}</div>
+        <div class="field"><label>${esc(t('How bad'))}</label>${sel('severity', [['minor', t('Minor')], ['moderate', t('Moderate')], ['serious', t('Serious')]], 'minor')}</div></div>
+      <div class="field"><label>${esc(t('Describe it'))}</label><textarea name="description" maxlength="4000" placeholder="${esc(t('Cracked a sprinkler head by the front bed'))}"></textarea></div>
+      <div class="field"><label>${esc(t('Who was there or hurt (optional)'))}</label><input name="people" maxlength="1000"></div>
+      <div class="field"><label>${esc(t('Photos'))}</label><input type="file" accept="image/*" capture="environment" multiple id="inc-files"><div id="inc-thumbs" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px"></div></div>
+      <div class="alert warn small">${esc(t('Someone hurt or a product spilled into water? Call the office and 911 or Poison Control first.'))}</div>`, [
+      { label: t('Cancel') },
+      { label: t('Send to the office'), cls: 'primary', onClick: async (el) => {
+        const f = formData(el);
+        if (!f.description) { toast(t('Describe what happened'), true); return false; }
+        await api('/nuvolve/app/api/incidents', { body: { ...f, visit_id: v.id, photos } });
+        toast(t('Sent. The office has it.'));
+      } }]);
+    $('#inc-files', m.el).onchange = async (e) => {
+      for (const file of [...e.target.files].slice(0, 10 - photos.length)) {
+        try {
+          const data = await shrinkImage(file, 1600);
+          photos.push({ data });
+          $('#inc-thumbs', m.el).insertAdjacentHTML('beforeend', `<img src="${data}" alt="" style="width:64px;height:64px;object-fit:cover;border-radius:6px">`);
+        } catch { toast(t('That photo could not be read'), true); }
+      }
+      e.target.value = '';
+    };
+  }
+
+  // ---------- wildlife ----------
+  const TRAPS = () => [['cage', t('Cage trap')], ['one_way_door', t('One-way door')], ['snap', t('Snap trap')], ['body_grip', t('Body-grip trap')], ['snare', t('Snare')], ['other', t('Other')]];
+  const RESULTS = () => [['empty', t('Empty')], ['caught', t('Caught the animal')], ['nontarget', t('Caught a different animal')], ['sprung', t('Sprung, nothing inside')], ['removed', t('Pulled the trap')]];
+  const DISPOSE = () => [['relocated', t('Relocated')], ['released', t('Released on site')], ['euthanized', t('Euthanized')], ['deceased', t('Found dead')]];
+  const label = (list, k) => (list().find((x) => x[0] === k) || [k, k])[1];
+  NV.slot('tech.stop', ({ v }) => (v.wildlife_job_id ? `<div class="card" id="ft-wild"><h3>🦝 ${esc(t('Wildlife job'))}</h3><p class="small muted">${esc(t('Loading...'))}</p></div>` : ''));
+  NV.on('tech.stop.rendered', async ({ v, root }) => {
+    const box = root.querySelector('#ft-wild');
+    if (!box) return;
+    let j;
+    try { j = await api(`/nuvolve/app/api/visits/${v.id}/wildlife`); } catch { box.innerHTML = `<h3>🦝 ${esc(t('Wildlife job'))}</h3><p class="small">${esc(t('Open this stop with signal to see the traps.'))}</p>`; return; }
+    if (!j) { box.remove(); return; }
+    const open = j.status === 'open';
+    box.innerHTML = `<h3>🦝 ${esc(t('Wildlife job'))}: ${esc(j.animals)}</h3>
+      ${j.notes ? `<p class="small">${esc(j.notes)}</p>` : ''}
+      ${j.totals.overdue ? `<div class="alert warn">⏰ ${esc(t('{n} traps are past their check time.', { n: j.totals.overdue }))}</div>` : ''}
+      <b>${esc(t('Traps'))}</b>
+      ${j.traps.filter((x) => x.status === 'set').map((x) => `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--line)">
+        <div><b>${esc(x.label)}</b> · ${esc(label(TRAPS, x.trap_type))}<div class="small muted">${esc(x.location || '')}</div></div>
+        ${open ? `<button class="btn" data-ft-check="${x.id}">${esc(t('Check'))}</button>` : ''}</div>`).join('') || `<p class="small muted">${esc(t('No traps set.'))}</p>`}
+      ${open ? `<button class="btn block" data-ft-trap style="margin-top:8px">➕ ${esc(t('Set a trap'))}</button>` : ''}
+      <b style="display:block;margin-top:14px">${esc(t('Exclusion repairs'))}</b>
+      ${j.repairs.map((r) => `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--line)">
+        <div class="small"><b>${esc(r.location)}</b> ${esc(r.material || '')} ${esc(r.size || '')}<br>${esc(r.status === 'done' ? t('Done') : t('To do'))}</div>
+        ${open && r.status !== 'done' ? `<button class="btn" data-ft-done="${r.id}">✓ ${esc(t('Done'))}</button>` : ''}</div>`).join('') || `<p class="small muted">${esc(t('No repairs listed.'))}</p>`}
+      ${open ? `<button class="btn block" data-ft-repair style="margin-top:8px">➕ ${esc(t('Add a repair'))}</button>` : ''}`;
+    $$('[data-ft-check]', box).forEach((b) => (b.onclick = () => checkTrap(j, Number(b.dataset.ftCheck), v)));
+    $$('[data-ft-done]', box).forEach((b) => (b.onclick = async () => {
+      try { await api(`/nuvolve/app/api/wildlife/repairs/${b.dataset.ftDone}`, { method: 'PUT', body: { status: 'done', visit_id: v.id } }); again(); } catch (e) { toast(e.message, true); }
+    }));
+    const trapBtn = box.querySelector('[data-ft-trap]');
+    if (trapBtn) trapBtn.onclick = () => modal(t('Set a trap'), `<div class="field"><label>${esc(t('Type'))}</label>${sel('trap_type', TRAPS(), 'cage')}</div>
+      <div class="field"><label>${esc(t('Where'))}</label><input name="location" maxlength="200" placeholder="${esc(t('Attic, by the vent'))}"></div>
+      <div class="field"><label>${esc(t('Name (optional)'))}</label><input name="label" maxlength="60" placeholder="${esc(t('Trap {n}', { n: j.traps.length + 1 }))}"></div>`, [
+      { label: t('Cancel') }, { label: t('Save'), cls: 'primary', onClick: async (el) => { await api(`/nuvolve/app/api/wildlife/jobs/${j.id}/traps`, { body: formData(el) }); again(); } }]);
+    const repBtn = box.querySelector('[data-ft-repair]');
+    if (repBtn) repBtn.onclick = () => modal(t('Add a repair'), `<div class="field"><label>${esc(t('Where'))}</label><input name="location" maxlength="200" placeholder="${esc(t('Soffit gap, north side'))}"></div>
+      <div class="row"><div class="field"><label>${esc(t('Material'))}</label><input name="material" maxlength="120"></div><div class="field"><label>${esc(t('Size'))}</label><input name="size" maxlength="60"></div></div>
+      <p class="small muted">${esc(t('The office sets the price.'))}</p>`, [
+      { label: t('Cancel') }, { label: t('Save'), cls: 'primary', onClick: async (el) => { await api(`/nuvolve/app/api/wildlife/jobs/${j.id}/repairs`, { body: formData(el) }); again(); } }]);
+  });
+  function checkTrap(j, trapId, v) {
+    const m = modal(t('Check the trap'), `<div class="field"><label>${esc(t('What did you find?'))}</label>${sel('result', RESULTS(), 'empty')}</div>
+      <div id="ft-animal" hidden><div class="row"><div class="field"><label>${esc(t('Animal'))}</label><input name="animal" maxlength="60" value="${esc(j.animals.split(',')[0] || '')}"></div>
+        <div class="field"><label>${esc(t('How many'))}</label><input type="number" name="count" min="1" max="50" value="1"></div></div>
+        <div class="field"><label>${esc(t('What was done with it'))}</label>${sel('disposition', DISPOSE(), 'relocated')}</div></div>
+      <div class="field"><label>${esc(t('Notes (optional)'))}</label><input name="notes" maxlength="1000"></div>`, [
+      { label: t('Cancel') }, { label: t('Save'), cls: 'primary', onClick: async (el) => {
+        const f = formData(el);
+        await api(`/nuvolve/app/api/wildlife/traps/${trapId}/check`, { body: { ...f, count: Number(f.count), visit_id: v.id } });
+        toast(t('Saved'));
+        again();
+      } }]);
+    $('[name=result]', m.el).onchange = (e) => ($('#ft-animal', m.el).hidden = !['caught', 'nontarget'].includes(e.target.value));
+  }
+
+  NV.on('tech.stop.rendered', ({ v, root }) => {
+    root.querySelectorAll('[data-ft]').forEach((b) => (b.onclick = () => (b.dataset.ft === 'upsell' ? upsell(v) : incident(v))));
+  });
+})();
+
+})(); } catch (e) { console.error('feature field-tech.js failed to load', e); }
+
+/* ---- features/field-ux.js ---- */
+try { (function () {
+// The tech app in the field: a high-contrast Sunlight look for reading the phone in direct sun, alerts when the office
+// adds a stop to today's route (Web Push, server side in src/features/push.js, shown by /tech-sw.js), keeping the
+// screen on while working a stop, and going easy on the battery when it runs low. FIELD-APP.md has the details.
+//
+// Everything here only runs in the tech app (/nuvolve/app/tech). Everything a tech reads goes through NV.t (Spanish in
+// src/lang/es/field-app.js).
+(function () {
+  if (!/^\/tech/.test(location.pathname)) return;
+  const t = (text, vars) => NV.t(text, vars);
+  const store = {
+    get: (k) => { try { return localStorage.getItem(k); } catch { return null; } },
+    set: (k, v) => { try { if (v == null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch { /* private mode */ } },
+  };
+
+  // ---------- Sunlight mode ----------
+  // Black on white, no grey text, heavier borders and bigger buttons. Picked on the phone and kept on it. A phone set to
+  // "increase contrast" starts in Sunlight mode until the tech picks.
+  const SUN_CSS = `
+    html[data-tech-theme="sun"] { --bg: #fff; --panel: #fff; --ink: #000; --muted: #1a1a1a; --line: #000; --shadow: none; }
+    html[data-tech-theme="sun"] body { background: #fff !important; color: #000; font-size: 17px; }
+    html[data-tech-theme="sun"] .top { background: #fff !important; color: #000 !important; border-bottom: 3px solid #000; }
+    html[data-tech-theme="sun"] .top a, html[data-tech-theme="sun"] .top .sub, html[data-tech-theme="sun"] .gps-badge { color: #000 !important; font-weight: 600; }
+    html[data-tech-theme="sun"] .gps-badge.on { color: #035a2b !important; }
+    html[data-tech-theme="sun"] .daybar button { background: #fff; color: #000; border: 2px solid #000; }
+    html[data-tech-theme="sun"] .daybar button.on { background: #000; color: #fff; }
+    html[data-tech-theme="sun"] .progress { background: #ddd; border: 1px solid #000; }
+    html[data-tech-theme="sun"] .progress div { background: #035a2b; }
+    html[data-tech-theme="sun"] .card, html[data-tech-theme="sun"] .tstop { border: 2px solid #000; box-shadow: none; }
+    html[data-tech-theme="sun"] .tstop.completed, html[data-tech-theme="sun"] .tstop.skipped { opacity: 1; background: #eee; }
+    html[data-tech-theme="sun"] .muted, html[data-tech-theme="sun"] .small, html[data-tech-theme="sun"] .hint { color: #000 !important; }
+    html[data-tech-theme="sun"] .small { font-size: 15px; }
+    html[data-tech-theme="sun"] .btn { border: 2px solid #000; color: #000; background: #fff; font-weight: 700; min-height: 48px; }
+    html[data-tech-theme="sun"] .btn.primary, html[data-tech-theme="sun"] .tnav, html[data-tech-theme="sun"] .tstop .n { background: #035a2b; border-color: #035a2b; color: #fff; }
+    html[data-tech-theme="sun"] .btn.danger { background: #a30000; border-color: #a30000; color: #fff; }
+    html[data-tech-theme="sun"] input, html[data-tech-theme="sun"] select, html[data-tech-theme="sun"] textarea { border: 2px solid #000; color: #000; font-size: 17px; }
+    html[data-tech-theme="sun"] .alert { border: 2px solid currentColor; font-weight: 600; }
+    html[data-tech-theme="sun"] .alert.warn { background: #fff3b0; color: #000; }
+    html[data-tech-theme="sun"] .alert.info { background: #dbeaff; color: #000; }
+    html[data-tech-theme="sun"] .alert.ok { background: #d5f5df; color: #000; }
+    html[data-tech-theme="sun"] .tabbar { border-top: 3px solid #000; }
+    html[data-tech-theme="sun"] .tabbar a { color: #000; font-size: 14px; }
+    html[data-tech-theme="sun"] .tabbar a.on { color: #035a2b; text-decoration: underline; text-underline-offset: 4px; }
+    html[data-tech-theme="sun"] .syncbar { background: #000; border: 2px solid #fff; }
+    html[data-tech-theme="sun"] .pill { border: 1px solid #000; color: #000; }
+    html[data-tech-theme="sun"] a { color: #003d1d; }
+    .fux-row { display: flex; gap: 8px; flex-wrap: wrap; }
+    .fux-row .btn { flex: 1 1 140px; }`;
+  const style = document.createElement('style');
+  style.textContent = SUN_CSS;
+  document.head.appendChild(style);
+  const wantsSun = () => {
+    const saved = store.get('nv_tech_theme');
+    if (saved) return saved === 'sun';
+    return window.matchMedia?.('(prefers-contrast: more)').matches || false;
+  };
+  const meta = () => document.querySelector('meta[name="theme-color"]');
+  function applyTheme() {
+    const sun = wantsSun();
+    if (sun) document.documentElement.dataset.techTheme = 'sun'; else delete document.documentElement.dataset.techTheme;
+    if (meta()) meta().setAttribute('content', sun ? '#ffffff' : '#1f2d27');
+  }
+  applyTheme();
+
+  // ---------- battery ----------
+  // The office map needs the truck's position, not survey-grade GPS. Below 20% and not charging, the phone uses the
+  // cheaper network location and reuses a fix for up to two minutes, and the screen is allowed to sleep. tech.js
+  // keeps calling watchPosition as before; this swaps the options underneath and restarts the watch when the
+  // battery crosses the line.
+  const LOW = 0.2;
+  const power = { low: false, level: null, charging: null };
+  const watches = new Map(); // our id -> { real, success, error, options }
+  const geo = navigator.geolocation;
+  const realWatch = geo?.watchPosition?.bind(geo);
+  const realClear = geo?.clearWatch?.bind(geo);
+  const tuned = (o = {}) => (power.low ? { ...o, enableHighAccuracy: false, maximumAge: Math.max(o.maximumAge || 0, 120000), timeout: Math.max(o.timeout || 0, 60000) } : o);
+  let nextId = 1;
+  if (realWatch && realClear) {
+    try {
+      geo.watchPosition = (success, error, options) => {
+        const id = nextId++;
+        watches.set(id, { real: realWatch(success, error, tuned(options)), success, error, options });
+        return id;
+      };
+      geo.clearWatch = (id) => {
+        const w = watches.get(id);
+        if (!w) return realClear(id);
+        realClear(w.real);
+        watches.delete(id);
+      };
+    } catch { /* a browser that won't let us wrap it keeps its own */ }
+  }
+  function restartWatches() {
+    for (const w of watches.values()) { realClear(w.real); w.real = realWatch(w.success, w.error, tuned(w.options)); }
+  }
+  const batteryNote = () => (power.low ? `<div class="alert warn" id="fux-battery">🔋 ${esc(t('Battery low ({level}%). Location updates less often to save power.', { level: Math.round(power.level * 100) }))}</div>` : '');
+  if (navigator.getBattery) {
+    navigator.getBattery().then((b) => {
+      const check = () => {
+        const low = !b.charging && b.level < LOW;
+        power.level = b.level; power.charging = b.charging;
+        if (low === power.low) return;
+        power.low = low;
+        restartWatches();
+        if (low) releaseWake();
+        else if (wakeWanted()) holdWake();
+        const el = document.getElementById('fux-battery');
+        if (el && !low) el.remove();
+      };
+      check();
+      b.addEventListener('levelchange', check);
+      b.addEventListener('chargingchange', check);
+    }).catch(() => {});
+  }
+
+  // ---------- keep the screen on ----------
+  // Off unless the tech turns it on. Released when the battery runs low or the app goes to the background (the
+  // browser does that on its own), and taken again when the app comes back.
+  let wake = null;
+  const wakeWanted = () => store.get('nv_tech_wake') === '1' && 'wakeLock' in navigator;
+  async function holdWake() {
+    if (!('wakeLock' in navigator) || wake || power.low || document.visibilityState !== 'visible') return;
+    try { wake = await navigator.wakeLock.request('screen'); wake.addEventListener('release', () => { wake = null; }); } catch { wake = null; }
+  }
+  function releaseWake() { if (wake) wake.release().catch(() => {}); wake = null; }
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && wakeWanted()) holdWake(); });
+  if (wakeWanted()) holdWake();
+
+  // ---------- alerts for added stops ----------
+  const isInstalled = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  const iphone = /iPhone|iPad/.test(navigator.userAgent);
+  const pushReady = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window && window.isSecureContext;
+  const push = { state: 'unknown' }; // on, off, blocked, unsupported, needs_install
+  const b64 = (s) => {
+    const pad = '='.repeat((4 - (s.length % 4)) % 4);
+    const raw = atob((s + pad).replace(/-/g, '+').replace(/_/g, '/'));
+    return Uint8Array.from(raw, (ch) => ch.charCodeAt(0));
+  };
+  async function pushState() {
+    if (!pushReady()) return (push.state = iphone && !isInstalled() ? 'needs_install' : 'unsupported');
+    if (Notification.permission === 'denied') return (push.state = 'blocked');
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.getSubscription();
+      return (push.state = sub ? 'on' : 'off');
+    } catch { return (push.state = 'unsupported'); }
+  }
+  async function turnOn() {
+    if (Notification.permission !== 'granted' && (await Notification.requestPermission()) !== 'granted') { push.state = 'blocked'; return false; }
+    const reg = await navigator.serviceWorker.ready;
+    const { publicKey } = await api('/nuvolve/app/api/push/key');
+    let sub = await reg.pushManager.getSubscription();
+    if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64(publicKey) });
+    await api('/nuvolve/app/api/push/subscribe', { body: { subscription: sub.toJSON() } });
+    push.state = 'on';
+    return true;
+  }
+  async function turnOff() {
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.getSubscription();
+    if (sub) { await api('/nuvolve/app/api/push/unsubscribe', { body: { endpoint: sub.endpoint } }).catch(() => {}); await sub.unsubscribe().catch(() => {}); }
+    push.state = 'off';
+  }
+  // A phone that's already subscribed tells the server again on open, so a new login or a server move keeps working.
+  pushState().then(async (s) => {
+    if (s !== 'on') return;
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.getSubscription();
+      if (sub) await api('/nuvolve/app/api/push/subscribe', { body: { subscription: sub.toJSON() } });
+    } catch { /* not logged in yet, or no signal */ }
+  });
+
+  // ---------- the card on the route page ----------
+  const pushLine = () => ({
+    on: t('🔔 Alerts are on. You get a notice when the office adds a stop.'),
+    off: t('🔕 Alerts are off. Turn them on to hear when the office adds a stop.'),
+    blocked: t('🔕 Alerts are blocked for this app. Allow notifications in your phone settings.'),
+    needs_install: t('🔕 On iPhone, alerts work once My Route is on your home screen (iOS 16.4 or newer).'),
+    unsupported: t("🔕 This browser can't show alerts."),
+    unknown: '',
+  }[push.state]);
+  NV.slot('tech.top', () => {
+    const open = store.get('nv_tech_fux_open') === '1';
+    // Asked once, right on the route, until the tech answers.
+    const ask = push.state === 'off' && !store.get('nv_push_asked');
+    return `${batteryNote()}
+      ${ask ? `<div class="card" id="fux-ask" style="display:flex;gap:10px;align-items:center"><div style="flex:1"><b>${esc(t('🔔 Get an alert when a stop is added'))}</b>
+        <div class="small muted">${esc(t('The office adds a stop, your phone buzzes. Nothing else.'))}</div></div>
+        <button class="btn primary sm" data-fux="push-on">${esc(t('Turn on'))}</button><button class="btn sm" data-fux="push-later" aria-label="${esc(t('Hide'))}">✕</button></div>` : ''}
+      <details class="card" id="fux" ${open ? 'open' : ''} style="padding:10px 14px"><summary style="font-weight:700;cursor:pointer">⚙️ ${esc(t('Phone settings'))}</summary>
+        <div style="margin-top:10px" class="fux-row">
+          <button class="btn" data-fux="theme">${wantsSun() ? `🌙 ${esc(t('Standard look'))}` : `☀️ ${esc(t('Sunlight mode'))}`}</button>
+          ${'wakeLock' in navigator ? `<button class="btn" data-fux="wake">${wakeWanted() ? `💤 ${esc(t('Let the screen sleep'))}` : `💡 ${esc(t('Keep the screen on'))}`}</button>` : ''}
+          ${push.state === 'on' ? `<button class="btn" data-fux="push-test">${esc(t('Send a test alert'))}</button><button class="btn" data-fux="push-off">${esc(t('Turn off alerts'))}</button>`
+          : push.state === 'off' ? `<button class="btn" data-fux="push-on">🔔 ${esc(t('Turn on alerts'))}</button>` : ''}
+        </div>
+        <div class="small" style="margin-top:8px">${esc(pushLine())}</div>
+        <div class="small muted" style="margin-top:4px">${esc(t('Sunlight mode is black on white for reading the phone outside. Location updates slow down when the battery is under 20%.'))}</div>
+      </details>`;
+  });
+  NV.on('tech.route.rendered', ({ root }) => {
+    const fux = root.querySelector('#fux');
+    if (fux) fux.addEventListener('toggle', () => store.set('nv_tech_fux_open', fux.open ? '1' : null));
+    const redraw = () => window.dispatchEvent(new HashChangeEvent('hashchange'));
+    root.querySelectorAll('[data-fux]').forEach((b) => (b.onclick = async () => {
+      const what = b.dataset.fux;
+      b.disabled = true;
+      try {
+        if (what === 'theme') { store.set('nv_tech_theme', wantsSun() ? 'standard' : 'sun'); applyTheme(); }
+        if (what === 'wake') {
+          if (wakeWanted()) { store.set('nv_tech_wake', null); releaseWake(); } else { store.set('nv_tech_wake', '1'); await holdWake(); }
+        }
+        if (what === 'push-on') {
+          store.set('nv_push_asked', '1');
+          if (await turnOn()) toast(t('Alerts are on'));
+          else toast(t('Alerts are blocked for this app. Allow notifications in your phone settings.'), true);
+        }
+        if (what === 'push-later') store.set('nv_push_asked', '1');
+        if (what === 'push-off') { await turnOff(); toast(t('Alerts are off')); }
+        if (what === 'push-test') {
+          const r = await api('/nuvolve/app/api/push/test', { method: 'POST' });
+          toast(r.sent ? t('Test alert sent') : t("The alert didn't go through. Turn alerts off and on again."), !r.sent);
+        }
+      } catch (e) { toast(e.message, true); }
+      redraw();
+    }));
+  });
+  // The first draw can come before the phone answers whether it's subscribed: draw the route again once it has.
+  pushState().then(() => { if (location.hash === '' || location.hash === '#/') { const card = document.getElementById('fux'); if (card) window.dispatchEvent(new HashChangeEvent('hashchange')); } });
+})();
+
+})(); } catch (e) { console.error('feature field-ux.js failed to load', e); }
+
+/* ---- features/fieldgaps-accounts.js ---- */
+try { (function () {
+// Office screens for the account gaps: duplicate customers and merge with undo (#/duplicates and the customer page),
+// property managers, landlords and HOAs with many addresses and the people at each one (the customer page), stopping
+// service for non-payment and the past-due ladder up to write-off approval (#/past-due), and damage, sting and spill
+// incidents with photos and the claim (#/incidents). Server side: src/features/customer-merge.js, properties-pm.js,
+// billing-suspend.js, billing-collections.js and incidents.js. Office screens are English.
+(function () {
+  if (/^\/(tech|portal|pay|track|sign|review|book|offer)/.test(location.pathname)) return;
+  const on = (sel, fn) => document.addEventListener('click', (e) => { const b = e.target.closest(sel); if (b) { e.preventDefault(); fn(b, e); } });
+  const plural = (n, one, many) => `${n} ${n === 1 ? one : many || `${one}s`}`;
+  const who = (r) => esc(r.name || r.company || r.customer_name || [r.first_name, r.last_name].filter(Boolean).join(' ') || 'Customer');
+  const opts = (list, cur) => list.map(([v, l]) => `<option value="${esc(v)}" ${String(v) === String(cur) ? 'selected' : ''}>${esc(l)}</option>`).join('');
+  const role = () => BOOT?.me?.role;
+  const isMgr = () => ['owner', 'admin', 'manager'].includes(role());
+  const isAdmin = () => ['owner', 'admin'].includes(role());
+  const stat = (label, value, sub) => `<div class="stat"><div class="label">${label}</div><div class="value">${value}</div>${sub ? `<div class="sub">${sub}</div>` : ''}</div>`;
+
+  // ---------- duplicates and merge ----------
+  NV.nav({ href: '#/duplicates', icon: '👯', label: 'Duplicates', role: 'manager', after: '#/customers' });
+  NV.slot('customer.actions', ({ c }) => (isMgr() ? `<button class="btn" data-merge="${c.id}">👯 Merge</button>` : ''));
+  on('[data-merge]', (b) => {
+    const keepId = Number(b.dataset.merge);
+    const m = modal('Merge another customer into this one', '<p class="small muted">Pick the duplicate. Its addresses, plans, visits, invoices, payments, messages and notes move here, and it is removed. You can undo it.</p><div id="mg-pick"></div><div id="mg-prev"></div>', []);
+    customerPicker($('#mg-pick', m.el), (c) => { if (c.id === keepId) return toast('Pick a different customer', true); m.close(); mergeModal(keepId, c.id); });
+  });
+  async function mergeModal(keepId, otherId) {
+    let p;
+    try { p = await api(`/nuvolve/app/api/customers/${keepId}/merge-preview?other=${otherId}`); } catch (e) { return toast(e.message, true); }
+    const side = (s, title) => `<div class="card" style="flex:1;margin:0"><div class="small muted">${title}</div><h3 style="margin:4px 0">${esc(s.name)} <span class="small muted">#${s.id}</span></h3>
+      <div class="small">${esc(s.email || '')} ${esc(s.phone || '')}</div><div class="small">${s.properties.map((x) => esc(x.address)).join('<br>')}</div>
+      <div class="small">${plural(s.plans, 'active plan')} · owes ${money(s.balance)}${s.card ? ` · ${esc(s.card)}` : ''}</div></div>`;
+    const moves = Object.entries(p.moves);
+    const m = modal('Merge customers', `<div style="display:flex;gap:10px;flex-wrap:wrap">${side(p.keep, 'Keep')}${side(p.remove, 'Merge in and remove')}</div>
+      <p class="small" style="margin-top:12px"><b>Moves:</b> ${moves.length ? moves.map(([k, n]) => `${n} ${esc(k.replace(/_/g, ' '))}`).join(', ') : 'nothing'}.</p>
+      ${p.fills.length ? `<p class="small"><b>Fills in blanks:</b> ${p.fills.map((f) => esc(f.replace(/_/g, ' '))).join(', ')}.</p>` : ''}
+      ${p.remove.card && p.keep.card ? '<div class="alert warn"><span>Both have a card on file. The kept customer keeps theirs.</span></div>' : ''}`, [
+      { label: 'Swap sides', onClick: () => { setTimeout(() => mergeModal(otherId, keepId), 0); } },
+      { label: 'Cancel' },
+      { label: 'Merge', cls: 'primary', onClick: async () => {
+        const r = await api(`/nuvolve/app/api/customers/${keepId}/merge`, { body: { other_id: otherId } });
+        toast(`Merged. ${plural(r.moved, 'record')} moved.`);
+        location.hash = `#/customers/${keepId}`;
+      } }]);
+    return m;
+  }
+  NV.page('duplicates', async (view, _id, params) => {
+    const tab = params.tab === 'history' ? 'history' : 'pairs';
+    const data = await api(tab === 'history' ? '/nuvolve/app/api/customer-merges' : '/nuvolve/app/api/customers-duplicates');
+    view.innerHTML = `<div class="page-head"><div><h1>👯 Duplicate customers</h1><div class="muted">Same phone, email or address. Merge them, or say they're different people.</div></div></div>
+      <div class="tabs"><a href="#/duplicates" class="${tab === 'pairs' ? 'on' : ''}" style="padding:9px 14px;text-decoration:none;font-weight:600">Possible duplicates</a><a href="#/duplicates?tab=history" class="${tab === 'history' ? 'on' : ''}" style="padding:9px 14px;text-decoration:none;font-weight:600">Merges</a></div>
+      <div class="card flush"><div class="table-wrap"><table class="list">${tab === 'pairs'
+    ? `<thead><tr><th>Customer</th><th>Looks like</th><th>Why</th><th></th></tr></thead><tbody>${data.length ? data.map((r) => `<tr>
+        <td><a href="#/customers/${r.a.id}">${who(r.a)}</a><div class="small muted">${esc(r.a.email || '')} ${esc(r.a.phone || '')}</div></td>
+        <td><a href="#/customers/${r.b.id}">${who(r.b)}</a><div class="small muted">${esc(r.b.email || '')} ${esc(r.b.phone || '')}</div></td>
+        <td>${r.why.map((w) => `<span class="pill">${esc(w)}</span>`).join(' ')}</td>
+        <td><button class="btn sm primary" data-mg-pair="${r.a.id}" data-other="${r.b.id}">Merge</button> <button class="btn sm" data-mg-dismiss="${r.a.id}" data-other="${r.b.id}">Not the same</button></td></tr>`).join('')
+      : '<tr><td colspan="4" class="empty">No duplicates found.</td></tr>'}</tbody>`
+    : `<thead><tr><th>When</th><th>Kept</th><th>Merged in</th><th>By</th><th></th></tr></thead><tbody>${data.length ? data.map((r) => `<tr><td>${fmtDate(r.created_at)}</td>
+        <td><a href="#/customers/${r.kept_id}">${esc(r.kept_name || `#${r.kept_id}`)}</a></td><td>${esc(r.removed_name)} <span class="small muted">#${r.removed_id}</span></td><td>${esc(r.user_name || '')}</td>
+        <td>${r.undone_at ? '<span class="pill">Undone</span>' : `<button class="btn sm" data-mg-undo="${r.id}">Undo</button>`}</td></tr>`).join('') : '<tr><td colspan="5" class="empty">No merges yet.</td></tr>'}</tbody>`}</table></div></div>`;
+  });
+  on('[data-mg-pair]', (b) => mergeModal(Number(b.dataset.mgPair), Number(b.dataset.other)));
+  on('[data-mg-dismiss]', async (b) => { try { await api('/nuvolve/app/api/customers-duplicates/dismiss', { body: { a: b.dataset.mgDismiss, b: b.dataset.other } }); route(); } catch (e) { toast(e.message, true); } });
+  on('[data-mg-undo]', async (b) => {
+    if (!confirm('Undo this merge? The removed customer comes back with the records that were theirs.')) return;
+    try { const r = await api(`/nuvolve/app/api/customer-merges/${b.dataset.mgUndo}/undo`, { method: 'POST' }); toast(`Undone. ${plural(r.back, 'record')} moved back.`); route(); } catch (e) { toast(e.message, true); }
+  });
+
+  // ---------- property managers, landlords, HOAs ----------
+  const KINDS = [['standard', 'Homeowner or single site'], ['property_manager', 'Property manager'], ['landlord', 'Landlord'], ['hoa', 'HOA'], ['commercial', 'Commercial, many sites']];
+  const ROLES = [['tenant', 'Tenant'], ['owner', 'Owner'], ['hoa', 'HOA contact'], ['site', 'Site contact'], ['manager', 'Manager'], ['other', 'Other']];
+  NV.slot('customer.right', ({ c }) => `<div class="card" data-pf="${c.id}" data-pf-many="${(c.properties || []).length > 1 || (c.account_kind && c.account_kind !== 'standard') ? 1 : ''}">
+    <div class="card-head"><h2>🏘️ Addresses and contacts</h2></div><p class="small muted">Loading...</p></div>`);
+  NV.on('customer.rendered', ({ c, view }) => { const card = $(`[data-pf="${c.id}"]`, view); if (card) drawPortfolio(card, c.id); });
+  async function drawPortfolio(card, id) {
+    let d;
+    try { d = await api(`/nuvolve/app/api/customers/${id}/portfolio`); } catch { card.remove(); return; }
+    const many = d.properties.length > 1 || d.customer.account_kind !== 'standard';
+    card.innerHTML = `<div class="card-head"><h2>🏘️ ${many ? 'Portfolio' : 'People at this address'}</h2>
+      <select data-pf-kind style="width:auto">${opts(KINDS, d.customer.account_kind)}</select></div>
+      ${many ? `<div class="small" style="margin-bottom:8px">${plural(d.totals.addresses, 'address', 'addresses')} · ${plural(d.totals.plans, 'plan')} · ${d.totals.vacant} vacant · owes ${money(d.totals.owed)} · ${money(d.totals.billed_ytd)} billed this year</div>` : ''}
+      ${d.properties.map((p) => `<div style="padding:8px 0;border-bottom:1px solid var(--line)">
+        <div style="display:flex;justify-content:space-between;gap:8px"><div><b>${esc(p.address)}</b>${p.city ? `, ${esc(p.city)}` : ''}
+          ${p.billing_ref ? ` <span class="pill">Ref ${esc(p.billing_ref)}</span>` : ''}${p.occupancy === 'vacant' ? ' <span class="pill yellow">Vacant</span>' : ''}${p.hoa_name ? ` <span class="pill blue">${esc(p.hoa_name)}</span>` : ''}</div>
+          <button class="btn sm" data-pf-prop="${p.id}" data-c="${id}">Edit</button></div>
+        <div class="small muted">${p.plans.map((x) => `${esc(x.service_name || '')} ${esc(x.frequency)}`).join(', ') || 'No plan'}${p.next ? ` · next ${fmtDay(p.next.date)}` : ''}${p.owed ? ` · owes ${money(p.owed)}` : ''}</div>
+        ${p.contacts.map((k) => `<div class="small" style="display:flex;justify-content:space-between;gap:6px">${esc((ROLES.find((r) => r[0] === k.role) || [0, k.role])[1])}: ${esc(k.name || '')} ${esc(k.phone || '')} ${esc(k.email || '')}${k.notify_visits ? ' · 🔔 day-before notice' : ''}${k.gets_reports ? ' · 📄 reports' : ''}
+          <span><button class="link-btn" data-pf-contact="${p.id}" data-k='${esc(JSON.stringify(k))}'>Edit</button> <button class="link-btn" data-pf-del="${k.id}">Remove</button></span></div>`).join('')}
+        <button class="link-btn small" data-pf-contact="${p.id}">+ Add a tenant, owner or HOA contact</button></div>`).join('')}
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px"><button class="btn sm" data-pf-bulk="${id}">Add many addresses</button>${d.properties.length > 1 ? `<button class="btn sm" data-pf-plans="${id}">Put a plan on many</button>` : ''}</div>`;
+    card._data = d;
+    $('[data-pf-kind]', card).onchange = async (e) => { try { await api(`/nuvolve/app/api/customers/${id}/account-kind`, { method: 'PUT', body: { account_kind: e.target.value } }); drawPortfolio(card, id); } catch (err) { toast(err.message, true); } };
+  }
+  const redrawCard = (b) => { const card = b.closest('[data-pf]'); if (card) drawPortfolio(card, Number(card.dataset.pf)); else route(); };
+  on('[data-pf-prop]', (b) => {
+    const card = b.closest('[data-pf]');
+    const p = card._data.properties.find((x) => x.id === Number(b.dataset.pfProp));
+    modal(`Edit ${p.address}`, `<div class="row"><div class="field"><label>Their reference (unit, PO, work order)</label><input name="billing_ref" maxlength="60" value="${esc(p.billing_ref || '')}"></div>
+      <div class="field"><label>Occupancy</label><select name="occupancy">${opts([['', 'Not set'], ['occupied', 'Occupied'], ['vacant', 'Vacant']], p.occupancy || '')}</select></div></div>
+      <div class="field"><label>HOA or community</label><input name="hoa_name" maxlength="120" value="${esc(p.hoa_name || '')}"></div>`, [
+      { label: 'Cancel' }, { label: 'Save', cls: 'primary', onClick: async (el) => { await api(`/nuvolve/app/api/properties/${p.id}/pm`, { method: 'PUT', body: formData(el) }); drawPortfolio(card, Number(card.dataset.pf)); } }]);
+  });
+  on('[data-pf-contact]', (b) => {
+    const k = b.dataset.k ? JSON.parse(b.dataset.k) : { role: 'tenant', notify_visits: 1 };
+    modal(k.id ? 'Edit contact' : 'Add a contact', `<div class="row"><div class="field"><label>Role</label><select name="role">${opts(ROLES, k.role)}</select></div><div class="field"><label>Name</label><input name="name" value="${esc(k.name || '')}"></div></div>
+      <div class="row"><div class="field"><label>Phone</label><input name="phone" value="${esc(k.phone || '')}"></div><div class="field"><label>Email</label><input name="email" value="${esc(k.email || '')}"></div></div>
+      <div class="field"><label>Language</label><select name="lang">${opts([['', 'English'], ['es', 'Spanish']], k.lang || '')}</select></div>
+      <label class="check"><input type="checkbox" name="notify_visits" ${k.notify_visits ? 'checked' : ''}> Text or email them the day before a visit (so they let the tech in)</label>
+      <label class="check"><input type="checkbox" name="gets_reports" ${k.gets_reports ? 'checked' : ''}> Email them the service report after each visit</label>
+      <div class="field"><label>Notes</label><input name="notes" maxlength="1000" value="${esc(k.notes || '')}"></div>`, [
+      { label: 'Cancel' }, { label: 'Save', cls: 'primary', onClick: async (el) => {
+        const f = formData(el);
+        if (k.id) await api(`/nuvolve/app/api/property-contacts/${k.id}`, { method: 'PUT', body: f }); else await api(`/nuvolve/app/api/properties/${b.dataset.pfContact}/contacts`, { body: f });
+        redrawCard(b);
+      } }]);
+  });
+  on('[data-pf-del]', async (b) => { if (!confirm('Remove this contact?')) return; try { await api(`/nuvolve/app/api/property-contacts/${b.dataset.pfDel}`, { method: 'DELETE' }); redrawCard(b); } catch (e) { toast(e.message, true); } });
+  on('[data-pf-bulk]', (b) => {
+    modal('Add many addresses', `<p class="small muted">One per line: <code>address, city, ST zip, their reference, tenant name, tenant phone</code>. Only the address is needed. You can paste straight from a spreadsheet. Addresses already on the account are skipped.</p>
+      <textarea name="text" rows="10" placeholder="120 Oak St #4, Dallas, TX 75201, Unit 4, Ana Ruiz, 214-555-0101"></textarea>`, [
+      { label: 'Cancel' }, { label: 'Add addresses', cls: 'primary', onClick: async (el) => {
+        const r = await api(`/nuvolve/app/api/customers/${b.dataset.pfBulk}/properties/bulk`, { body: { text: formData(el).text } });
+        toast(`${plural(r.added, 'address', 'addresses')} added${r.skipped?.length ? `, ${r.skipped.length} already there` : ''}.`);
+        route();
+      } }]);
+  });
+  on('[data-pf-plans]', (b) => {
+    const card = b.closest('[data-pf]');
+    const d = card._data;
+    modal('Put a plan on many addresses', `<div style="max-height:220px;overflow:auto;border:1px solid var(--line);border-radius:8px;margin-bottom:10px">${d.properties.map((p) => `<label class="check" style="padding:6px 10px;margin:0;border-bottom:1px solid var(--line)"><input type="checkbox" data-pp="${p.id}" ${p.plans.length ? '' : 'checked'}> ${esc(p.address)}${p.plans.length ? ` <span class="small muted">(has ${esc(p.plans.map((x) => x.service_name).join(', '))})</span>` : ''}</label>`).join('')}</div>
+      <div class="row"><div class="field"><label>Service</label><select name="service_type_id">${serviceOptions()}</select></div><div class="field"><label>How often</label><select name="frequency">${opts([['monthly', 'Monthly'], ['bimonthly', 'Every 2 months'], ['quarterly', 'Quarterly'], ['yearly', 'Yearly']], 'quarterly')}</select></div></div>
+      <div class="row"><div class="field"><label>Price per address</label><input type="number" step="0.01" name="price"></div><div class="field"><label>Start</label><input type="date" name="start_date" value="${todayStr()}"></div><div class="field"><label>Tech</label><select name="tech_id">${techOptions('')}</select></div></div>`, [
+      { label: 'Cancel' }, { label: 'Add plans', cls: 'primary', onClick: async (el) => {
+        const ids = $$('[data-pp]:checked', el).map((x) => Number(x.dataset.pp));
+        const r = await api(`/nuvolve/app/api/customers/${d.customer.id}/portfolio/plans`, { body: { ...formData(el), property_ids: ids } });
+        toast(`${plural(r.added ?? r.plans?.length ?? ids.length, 'plan')} added${r.skipped ? `, ${r.skipped} already had one` : ''}.`);
+        route();
+      } }]);
+  });
+
+  // ---------- stopping service for non-payment ----------
+  NV.slot('customer.alerts', ({ c }) => (c.suspended_at ? `<div class="alert err"><span>⛔ <b>Service stopped</b> ${fmtDate(c.suspended_at)} for non-payment${c.suspend_reason ? `: ${esc(c.suspend_reason)}` : ''}. Upcoming visits are on hold; they come back when the balance is paid.</span>
+    ${isMgr() ? `<button class="btn sm primary" data-resume="${c.id}">Resume service</button>` : ''}</div>` : ''));
+  NV.slot('customer.actions', ({ c }) => (isMgr() && !c.suspended_at && c.balance > 0 ? `<button class="btn" data-suspend="${c.id}">⛔ Stop service</button>` : ''));
+  on('[data-resume]', async (b) => { try { const r = await api(`/nuvolve/app/api/customers/${b.dataset.resume}/resume`, { method: 'POST' }); toast(`Service resumed. ${plural(r.stops, 'visit')} back on the schedule.`); route(); } catch (e) { toast(e.message, true); } });
+  on('[data-suspend]', (b) => modal('Stop service for non-payment', `<p>Upcoming visits are taken off the schedule and held. The customer is told. Paying the balance brings them back on their own.</p>
+    <div class="field"><label>Reason</label><input name="reason" value="Balance past due" maxlength="300"></div>`, [
+    { label: 'Cancel' }, { label: 'Stop service', cls: 'danger', onClick: async (el) => { const r = await api(`/nuvolve/app/api/customers/${b.dataset.suspend}/suspend`, { body: formData(el) }); toast(`Stopped. ${plural(r.stops, 'visit')} on hold.`); route(); } }]));
+
+  // ---------- the past-due ladder ----------
+  NV.nav({ href: '#/past-due', icon: '🪜', label: 'Past-due ladder', after: '#/collections' });
+  const NEXT = { reminders: 'Reminders are running', final_notice: 'Send the final notice', wait_deadline: 'Waiting for the final-notice deadline', agency: 'Send to a collections agency',
+    wait_agency: 'With the agency', write_off: 'Ask to write it off', approve_write_off: 'Write-off waiting for approval' };
+  NV.page('past-due', async (view) => {
+    const d = await api('/nuvolve/app/api/collections/ladder');
+    const [susp, cfg] = await Promise.all([api('/nuvolve/app/api/suspended').catch(() => []), api('/nuvolve/app/api/suspend/settings').catch(() => null)]);
+    view.innerHTML = `<div class="page-head"><div><h1>🪜 Past-due ladder</h1><div class="muted">Reminders, then a final notice, then an agency, then a write-off someone else approves</div></div>
+      <div class="actions"><a class="btn" href="/nuvolve/app/api/collections/agency.csv">Agency CSV</a>${isAdmin() ? '<a class="btn" href="#/settings?tab=past-due">⚙️ Settings</a>' : ''}</div></div>
+      <div class="stats">${['1-30', '31-60', '61-90', '90+'].map((k) => stat(`${k} days`, money(d.buckets[k] || 0))).join('')}${stat('Service stopped', susp.length, cfg?.days ? `after ${cfg.days} days past due` : 'automatic stop is off')}</div>
+      ${d.requests.length ? `<div class="card"><h2>Write-offs waiting for approval</h2>${d.requests.map((k) => `<div style="display:flex;justify-content:space-between;gap:8px;padding:6px 0;border-bottom:1px solid var(--line)">
+        <span><b>${who(k)}</b> · ${money(k.amount)} · asked by ${esc(k.user_name || '')}: ${esc(k.reason || '')}</span>
+        ${isAdmin() ? `<span><button class="btn sm primary" data-wo="${k.id}" data-d="approve">Approve</button> <button class="btn sm" data-wo="${k.id}" data-d="reject">Reject</button></span>` : '<span class="small muted">An owner or admin approves</span>'}</div>`).join('')}</div>` : ''}
+      <div class="card flush"><div class="table-wrap"><table class="list"><thead><tr><th>Customer</th><th>Owed</th><th>Late</th><th>Step</th><th>Next</th><th></th></tr></thead><tbody>
+      ${d.rows.length ? d.rows.map((r) => `<tr><td><a href="#/customers/${r.id}">${who(r)}</a>${r.suspended_at ? ' <span class="pill red">Stopped</span>' : ''}</td><td>${money(r.owed)}<div class="small muted">${plural(r.bills, 'bill')}</div></td>
+        <td>${r.days_late} days</td><td>${esc((r.collections_stage || 'reminders').replace(/_/g, ' '))}${r.last?.deadline ? `<div class="small muted">pay by ${fmtDate(r.last.deadline)}</div>` : ''}</td><td class="small">${esc(NEXT[r.next] || r.next)}</td>
+        <td style="white-space:nowrap">${['reminders', 'final_notice'].includes(r.next) || r.next === 'wait_deadline' ? '' : ''}
+          ${!['agency', 'written_off'].includes(r.collections_stage) && r.collections_stage !== 'final_notice' ? `<button class="btn sm" data-lad="final" data-c="${r.id}">Final notice</button>` : ''}
+          ${isMgr() && r.collections_stage !== 'agency' ? `<button class="btn sm" data-lad="agency" data-c="${r.id}">To agency</button>` : ''}
+          ${!r.write_off_request ? `<button class="btn sm" data-lad="writeoff" data-c="${r.id}" data-owed="${r.owed}">Write off</button>` : ''}</td></tr>`).join('')
+    : '<tr><td colspan="6" class="empty">Nothing past due. 🎉</td></tr>'}</tbody></table></div></div>`;
+  });
+  on('[data-lad]', (b) => {
+    const id = b.dataset.c;
+    if (b.dataset.lad === 'final') {
+      if (!confirm('Send the final notice? They get a deadline to pay before the account can go to an agency.')) return;
+      return api(`/nuvolve/app/api/collections/${id}/final-notice`, { method: 'POST' }).then((r) => { toast(`Final notice sent. Pay by ${fmtDate(r.deadline)}.`); route(); }).catch((e) => toast(e.message, true));
+    }
+    if (b.dataset.lad === 'agency') {
+      return modal('Send to a collections agency', `<p>Service stops and the account is marked as placed. Download the agency CSV to send them.</p>
+        <div class="row"><div class="field"><label>Agency</label><input name="agency" maxlength="120"></div><div class="field"><label>Their reference (optional)</label><input name="agency_ref" maxlength="60"></div></div>`, [
+        { label: 'Cancel' }, { label: 'Send to agency', cls: 'danger', onClick: async (el) => { await api(`/nuvolve/app/api/collections/${id}/agency`, { body: formData(el) }); toast('Placed with the agency'); route(); } }]);
+    }
+    return modal('Ask to write this off', `<p>${money(b.dataset.owed)} past due. An owner or admin other than you approves it. Written-off bills stop counting as owed.</p>
+      <div class="field"><label>Why</label><textarea name="reason" maxlength="1000" placeholder="Moved out of state, agency could not collect"></textarea></div>`, [
+      { label: 'Cancel' }, { label: 'Ask for approval', cls: 'primary', onClick: async (el) => { await api(`/nuvolve/app/api/collections/${id}/write-off`, { body: formData(el) }); toast('Sent for approval'); route(); } }]);
+  });
+  on('[data-wo]', async (b) => {
+    const approve = b.dataset.d === 'approve';
+    const note = prompt(approve ? 'Approve the write-off. Note (optional):' : 'Reject the write-off. Why?');
+    if (note == null) return;
+    try { const r = await api(`/nuvolve/app/api/collections/write-offs/${b.dataset.wo}/${b.dataset.d}`, { body: { note } }); toast(r.status === 'approved' ? `Written off ${money(r.amount)}` : 'Rejected'); route(); } catch (e) { toast(e.message, true); }
+  });
+  NV.settingsTab({ key: 'past-due', label: 'Past due', async render(box) {
+    const [c, s] = await Promise.all([api('/nuvolve/app/api/collections/settings'), api('/nuvolve/app/api/suspend/settings')]);
+    box.innerHTML = `<div class="card"><h2>Past-due ladder</h2>
+      <div class="row"><div class="field"><label>Final notice after (days late)</label><input type="number" name="final_days" value="${c.finalDays}"></div>
+        <div class="field"><label>Days to pay after the final notice</label><input type="number" name="grace" value="${c.grace}"></div>
+        <div class="field"><label>Agency after (days late)</label><input type="number" name="agency_days" value="${c.agencyDays}"></div></div>
+      <div class="field"><label>Collections agency</label><input name="agency" value="${esc(c.agency || '')}"></div>
+      <label class="check"><input type="checkbox" name="auto_final" ${c.autoFinal ? 'checked' : ''}> Send the final notice on its own when an account reaches the day</label></div>
+      <div class="card"><h2>Stop service when unpaid</h2>
+      <div class="row"><div class="field"><label>Stop after (days past due, 0 = never)</label><input type="number" name="days" value="${s.days}"></div>
+        <div class="field"><label>Only when they owe at least</label><input type="number" step="0.01" name="min" value="${s.min}"></div></div>
+      <label class="check"><input type="checkbox" name="notify" ${s.notify ? 'checked' : ''}> Tell the customer when service stops and when it resumes</label>
+      <p class="small muted">Accounts marked exempt (on the customer page) are never stopped.</p></div>
+      <button class="btn primary" id="pd-save">Save</button>`;
+    $('#pd-save', box).onclick = async () => {
+      const f = formData(box);
+      try {
+        await api('/nuvolve/app/api/collections/settings', { method: 'PUT', body: { final_days: Number(f.final_days), grace: Number(f.grace), agency_days: Number(f.agency_days), agency: f.agency, auto_final: f.auto_final } });
+        await api('/nuvolve/app/api/suspend/settings', { method: 'PUT', body: { days: Number(f.days), min: Number(f.min), notify: f.notify } });
+        toast('Saved');
+      } catch (e) { toast(e.message, true); }
+    };
+  } });
+
+  // ---------- incidents ----------
+  NV.nav({ href: '#/incidents', icon: '⚠️', label: 'Incidents', after: '#/records' });
+  const STATUS = [['reported', 'Reported'], ['investigating', 'Investigating'], ['claim_filed', 'Claim filed'], ['resolved', 'Resolved'], ['denied', 'Denied'], ['closed', 'Closed']];
+  const KIND = [['property_damage', 'Property damage'], ['sting_bite', 'Sting or bite'], ['spill', 'Spill'], ['injury', 'Injury'], ['pet', 'Pet'], ['vehicle', 'Vehicle'], ['other', 'Other']];
+  const sevPill = (s) => `<span class="pill ${s === 'serious' ? 'red' : s === 'moderate' ? 'yellow' : ''}">${esc(s)}</span>`;
+  NV.page('incidents', async (view, id, params) => {
+    const closed = params.status === 'closed';
+    const d = await api(`/nuvolve/app/api/incidents${closed ? '?status=closed' : ''}`);
+    view.innerHTML = `<div class="page-head"><div><h1>⚠️ Incidents</h1><div class="muted">Damage, stings and bites, spills and injuries, with photos and the insurance claim</div></div>
+      <div class="actions"><button class="btn primary" data-inc-new>Log an incident</button></div></div>
+      <div class="stats">${stat('This year', d.year.n)}${stat('Paid by insurance', money(d.year.insurance))}${stat('Paid by the company', money(d.year.company))}</div>
+      <div class="tabs"><a href="#/incidents" class="${closed ? '' : 'on'}" style="padding:9px 14px;text-decoration:none;font-weight:600">Open</a><a href="#/incidents?status=closed" class="${closed ? 'on' : ''}" style="padding:9px 14px;text-decoration:none;font-weight:600">Closed</a></div>
+      <div class="card flush"><div class="table-wrap"><table class="list"><thead><tr><th>When</th><th>What</th><th>Customer</th><th>Tech</th><th>Status</th><th>Claim</th><th></th></tr></thead><tbody>
+      ${d.rows.length ? d.rows.map((r) => `<tr><td>${fmtDate(r.happened_at)}</td><td>${esc(r.kind_label)} ${sevPill(r.severity)}<div class="small muted">${esc(String(r.description).slice(0, 90))}</div></td>
+        <td>${r.customer_name || r.company ? who(r) : ''}</td><td>${esc(r.tech_name || '')}</td><td>${esc((STATUS.find((s) => s[0] === r.status) || [0, r.status])[1])}</td>
+        <td class="small">${esc(r.claim_number || '')}${r.amount_claimed ? ` ${money(r.amount_claimed)}` : ''}</td><td><button class="btn sm" data-inc="${r.id}">Open</button></td></tr>`).join('')
+    : '<tr><td colspan="7" class="empty">Nothing here.</td></tr>'}</tbody></table></div></div>`;
+    if (id) incidentModal(id);
+  });
+  on('[data-inc]', (b) => incidentModal(b.dataset.inc));
+  async function incidentModal(id) {
+    let i;
+    try { i = await api(`/nuvolve/app/api/incidents/${id}`); } catch (e) { return toast(e.message, true); }
+    modal(`${i.kind_label}: ${i.customer_name || i.company || 'no customer'}`, `<p>${sevPill(i.severity)} ${fmtDate(i.happened_at)} · ${esc(i.tech_name || '')}${i.address ? ` · ${esc(i.address)}` : ''}${i.visit_id ? ` · <a href="#/visits/${i.visit_id}">Visit</a>` : ''}</p>
+      <p style="white-space:pre-wrap">${esc(i.description)}</p>${i.people ? `<p class="small"><b>People:</b> ${esc(i.people)}</p>` : ''}${i.product_name ? `<p class="small"><b>Product:</b> ${esc(i.product_name)} (EPA ${esc(i.epa_reg || '')})</p>` : ''}
+      ${i.photos.length ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">${i.photos.map((p) => `<a href="/nuvolve/app/api/incident-photos/${p.id}" target="_blank" rel="noopener"><img src="/nuvolve/app/api/incident-photos/${p.id}" alt="" style="width:96px;height:96px;object-fit:cover;border-radius:6px"></a>`).join('')}</div>` : ''}
+      <div class="row"><div class="field"><label>Status</label><select name="status">${opts(STATUS, i.status)}</select></div><div class="field"><label>Severity</label><select name="severity">${opts([['minor', 'Minor'], ['moderate', 'Moderate'], ['serious', 'Serious']], i.severity)}</select></div>
+        <div class="field"><label>Handled by</label><select name="assigned_to">${techOptions(i.assigned_to, 'Nobody yet')}</select></div></div>
+      <div class="row"><div class="field"><label>Insurer</label><input name="insurer" value="${esc(i.insurer || '')}"></div><div class="field"><label>Claim number</label><input name="claim_number" value="${esc(i.claim_number || '')}"></div><div class="field"><label>Amount claimed</label><input type="number" step="0.01" name="amount_claimed" value="${i.amount_claimed ?? ''}"></div></div>
+      <div class="row"><div class="field"><label>Paid by insurance</label><input type="number" step="0.01" name="paid_insurance" value="${i.paid_insurance || ''}"></div><div class="field"><label>Paid by the company</label><input type="number" step="0.01" name="paid_company" value="${i.paid_company || ''}"></div></div>
+      <div class="field"><label>How it ended</label><textarea name="resolution" maxlength="2000">${esc(i.resolution || '')}</textarea></div>
+      <div class="field"><label>Add a note</label><input name="note" maxlength="1000" placeholder="Called the homeowner, sent the adjuster photos"></div>
+      <h3>History</h3>${i.events.map((e) => `<div class="small" style="padding:3px 0">${fmtDate(e.created_at)} · ${esc(e.user_name || '')}: ${esc(e.kind)} ${esc(e.text || '')}</div>`).join('')}`, [
+      { label: 'Close' },
+      { label: 'Save', cls: 'primary', onClick: async (el) => {
+        const { note, ...f } = formData(el);
+        await api(`/nuvolve/app/api/incidents/${i.id}`, { method: 'PUT', body: f });
+        if (note) await api(`/nuvolve/app/api/incidents/${i.id}/notes`, { body: { note } });
+        toast('Saved');
+        route();
+      } }]);
+  }
+  on('[data-inc-new]', () => {
+    let customerId = null;
+    const m = modal('Log an incident', `<div id="inc-who"></div><div class="row"><div class="field"><label>What happened</label><select name="kind">${opts(KIND, 'property_damage')}</select></div>
+      <div class="field"><label>Severity</label><select name="severity">${opts([['minor', 'Minor'], ['moderate', 'Moderate'], ['serious', 'Serious']], 'minor')}</select></div><div class="field"><label>When</label><input type="datetime-local" name="happened_at"></div></div>
+      <div class="field"><label>Description</label><textarea name="description" maxlength="4000"></textarea></div><div class="field"><label>Tech</label><select name="tech_id">${techOptions('', 'Nobody')}</select></div>`, [
+      { label: 'Cancel' }, { label: 'Save', cls: 'primary', onClick: async (el) => {
+        const f = formData(el);
+        const r = await api('/nuvolve/app/api/incidents', { body: { ...f, happened_at: f.happened_at ? f.happened_at.replace('T', ' ') : undefined, customer_id: customerId } });
+        toast('Logged');
+        location.hash = `#/incidents/${r.id}`;
+      } }]);
+    customerPicker($('#inc-who', m.el), (c) => { customerId = c.id; $('#inc-who', m.el).innerHTML = `<p>Customer: <b>${who(c)}</b></p>`; });
+  });
+})();
+
+})(); } catch (e) { console.error('feature fieldgaps-accounts.js failed to load', e); }
+
+/* ---- features/fieldgaps-reports.js ---- */
+try { (function () {
+// Reports and settings for the field-app work: door add-ons by tech with commission (#/add-ons), per-visit ratings
+// next to callbacks (#/ratings), and auto-renewal (a Settings tab, the consent record on the customer page, and the
+// "cancel online" card in the customer portal). Server side: src/features/upsell.js, visit-ratings.js and
+// autorenew.js. Office screens are English; the portal card goes through NV.t (Spanish in src/lang/es/field-app.js).
+(function () {
+  const portal = /^\/(portal|pay)/.test(location.pathname);
+  if (/^\/(tech|track|sign|review|book|offer)/.test(location.pathname)) return;
+
+  // ---------- the customer portal: renewal terms and cancel online ----------
+  if (portal) {
+    const t = (text, vars) => NV.t(text, vars);
+    NV.slot('portal.cards', ({ token }) => `<div class="card hidden" id="ar-card" data-token="${esc(token)}"></div>`);
+    NV.on('portal.rendered', async ({ token, root }) => {
+      const card = (root || document).querySelector('#ar-card');
+      if (!card) return;
+      let d;
+      try { d = await api(`/nuvolve/app/api/portal/${encodeURIComponent(token)}/autorenew`); } catch { return; }
+      if (!d.on || !d.plans.length) return;
+      card.innerHTML = `<h2>${esc(t('Your plan renews automatically'))}</h2>
+        ${d.plans.map((p) => `<div class="small">${esc(t(p.service_name || 'Service'))} · ${money(p.price)} · ${esc(t(p.frequency))}</div>`).join('')}
+        <p class="small muted" style="margin-top:8px">${esc(t('It continues, and you are charged, until you cancel. You can cancel online at any time.'))}</p>
+        <a class="btn block" href="${esc(d.cancel_url)}">${esc(t('Cancel my plan online'))}</a>`;
+      card.classList.remove('hidden');
+    });
+    return;
+  }
+
+  const on = (sel, fn) => document.addEventListener('click', (e) => { const b = e.target.closest(sel); if (b) { e.preventDefault(); fn(b, e); } });
+  const isAdmin = () => ['owner', 'admin'].includes(BOOT?.me?.role);
+  const stat = (label, value, sub) => `<div class="stat"><div class="label">${label}</div><div class="value">${value}</div>${sub ? `<div class="sub">${sub}</div>` : ''}</div>`;
+  const range = (params) => {
+    const to = params.to || todayStr();
+    return { from: params.from || addDays(to, -30), to };
+  };
+  const dates = (base, r) => `<div class="actions"><input type="date" id="rg-from" value="${r.from}"> <input type="date" id="rg-to" value="${r.to}"> <button class="btn" data-rg="${base}">Show</button></div>`;
+  on('[data-rg]', (b) => { location.hash = `#/${b.dataset.rg}?from=${$('#rg-from').value}&to=${$('#rg-to').value}`; });
+
+  // ---------- add-ons sold at the door ----------
+  NV.nav({ href: '#/add-ons', icon: '💰', label: 'Door add-ons', after: '#/reports' });
+  const KIND = { today: 'Done that day', later: 'Booked', plan: 'New plan' };
+  NV.page('add-ons', async (view, _id, params) => {
+    const r = range(params);
+    const d = await api(`/nuvolve/app/api/upsells?from=${r.from}&to=${r.to}`);
+    const live = d.rows.filter((x) => x.status !== 'cancelled');
+    view.innerHTML = `<div class="page-head"><div><h1>💰 Door add-ons</h1><div class="muted">What techs sold at the stop, and the commission it earns once the work is done</div></div>${dates('add-ons', r)}</div>
+      <div class="stats">${stat('Sold', live.length)}${stat('Value', money(live.reduce((s, x) => s + x.price, 0)))}${stat('Yearly value', money(live.reduce((s, x) => s + (x.yearly_value || 0), 0)), 'plans count a full year')}
+        ${stat('Commission', money(d.byTech.reduce((s, x) => s + x.commission_earned, 0)), `${money(d.byTech.reduce((s, x) => s + x.commission_pending, 0))} waiting on the work`)}</div>
+      <div class="card flush"><div class="table-wrap"><table class="list"><thead><tr><th>Tech</th><th>Sold</th><th>Value</th><th>Yearly</th><th>Earned</th><th>Pending</th></tr></thead><tbody>
+        ${d.byTech.map((x) => `<tr><td>${esc(x.tech_name || '')}</td><td>${x.sold}</td><td>${money(x.value)}</td><td>${money(x.yearly)}</td><td>${money(x.commission_earned)}</td><td>${money(x.commission_pending)}</td></tr>`).join('') || '<tr><td colspan="6" class="empty">No add-ons sold in these dates.</td></tr>'}</tbody></table></div></div>
+      <div class="card flush"><div class="table-wrap"><table class="list"><thead><tr><th>When</th><th>Customer</th><th>Service</th><th>Kind</th><th>Price</th><th>Commission</th><th>OK</th><th>Status</th></tr></thead><tbody>
+        ${d.rows.map((x) => `<tr><td>${fmtDate(x.created_at)}</td><td><a href="#/customers/${x.customer_id}">${esc(x.company || x.customer_name)}</a><div class="small muted">${esc(x.tech_name || '')}</div></td>
+          <td>${esc(x.service_name)}</td><td>${esc(KIND[x.kind] || x.kind)}${x.frequency ? ` (${esc(x.frequency)})` : ''}</td><td>${money(x.price)}</td><td>${money(x.commission)}</td>
+          <td>${x.signed ? `<a href="/nuvolve/app/api/upsells/${x.id}/signature" target="_blank" rel="noopener">Signed</a>` : 'Said yes'}</td><td>${esc(x.status)}</td></tr>`).join('')}</tbody></table></div></div>
+      ${isAdmin() ? `<div class="card"><h2>What techs can offer</h2><p class="small muted">Ticked services show on the tech's "Offer an add-on" button at every stop, at the branch price. Commission is a percent of the price unless a service has its own percent or a flat amount.</p>
+        <div class="row"><div class="field"><label>Default commission %</label><input type="number" id="ups-pct" min="0" max="100" value="${d.settings.pct}"></div></div>
+        <label class="check"><input type="checkbox" id="ups-yearly" ${d.settings.planYearly ? 'checked' : ''}> A new plan's commission is on its first year, not one visit</label>
+        <table class="list"><thead><tr><th>Offer</th><th>Service</th><th>Its own %</th><th>Or flat $</th></tr></thead><tbody>
+        ${d.services.map((s) => `<tr data-us="${s.id}"><td><input type="checkbox" name="upsell" ${s.upsell ? 'checked' : ''}></td><td>${esc(s.name)} <span class="small muted">${money(s.default_price)}</span></td>
+          <td><input type="number" name="upsell_pct" min="0" max="100" value="${s.upsell_pct ?? ''}" style="width:80px"></td><td><input type="number" step="0.01" name="upsell_flat" value="${s.upsell_flat ?? ''}" style="width:100px"></td></tr>`).join('')}</tbody></table>
+        <button class="btn primary" id="ups-save" style="margin-top:10px">Save</button></div>` : ''}`;
+    const save = $('#ups-save', view);
+    if (save) save.onclick = async () => {
+      try {
+        await api('/nuvolve/app/api/upsells/settings', { method: 'PUT', body: { pct: Number($('#ups-pct', view).value), plan_yearly: $('#ups-yearly', view).checked,
+          services: $$('[data-us]', view).map((tr) => ({ id: Number(tr.dataset.us), ...formData(tr) })) } });
+        toast('Saved');
+      } catch (e) { toast(e.message, true); }
+    };
+  });
+
+  // ---------- ratings ----------
+  NV.nav({ href: '#/ratings', icon: '⭐', label: 'Ratings', after: '#/add-ons' });
+  NV.page('ratings', async (view, _id, params) => {
+    const r = range({ ...params, from: params.from || addDays(todayStr(), -90) });
+    const d = await api(`/nuvolve/app/api/ratings/summary?from=${r.from}&to=${r.to}`);
+    view.innerHTML = `<div class="page-head"><div><h1>⭐ Ratings by visit</h1><div class="muted">Every finished stop asks for 1 to 5 stars. A low one asks if they still see pests; a yes goes on Today as a callback.</div></div>${dates('ratings', r)}</div>
+      <div class="stats">${stat('Rated', d.totals.rated)}${stat('Satisfied (4 or 5)', d.totals.csat == null ? '—' : `${d.totals.csat}%`)}${stat('Low ratings', d.totals.low, `${d.ask_max} stars or less`)}${stat('Still seeing pests', d.totals.still_active, 'became callback requests')}</div>
+      <div class="card flush"><div class="table-wrap"><table class="list"><thead><tr><th>Tech</th><th>Rated</th><th>Average</th><th>Satisfied</th><th>Answered</th><th>Low</th><th>Still pests</th><th>Callbacks</th><th>Callback rate</th></tr></thead><tbody>
+        ${d.techs.map((x) => `<tr><td>${esc(x.tech_name || 'No tech')}</td><td>${x.rated}</td><td>${x.avg ?? '—'}</td><td>${x.csat == null ? '—' : `${x.csat}%`}</td><td>${x.response == null ? '—' : `${x.response}%`}</td>
+          <td>${x.low}</td><td>${x.still_active}</td><td>${x.callbacks}</td><td>${x.callback_rate == null ? '—' : `${x.callback_rate}%`}</td></tr>`).join('') || '<tr><td colspan="9" class="empty">No ratings in these dates.</td></tr>'}</tbody></table></div></div>
+      ${isAdmin() ? `<div class="card"><h2>When to ask "still seeing pests?"</h2><div class="row"><div class="field"><label>Ask after a rating of</label><select id="rt-max">${[0, 1, 2, 3, 4, 5].map((n) => `<option value="${n}" ${n === d.ask_max ? 'selected' : ''}>${n === 0 ? 'Never ask' : `${n} stars or less`}</option>`).join('')}</select></div></div>
+        <button class="btn primary" id="rt-save">Save</button></div>` : ''}`;
+    const save = $('#rt-save', view);
+    if (save) save.onclick = async () => { try { await api('/nuvolve/app/api/ratings/settings', { method: 'PUT', body: { ask_max: Number($('#rt-max', view).value) } }); toast('Saved'); } catch (e) { toast(e.message, true); } };
+  });
+
+  // ---------- auto-renewal ----------
+  NV.settingsTab({ key: 'autorenew', label: 'Auto-renewal', async render(box) {
+    const s = await api('/nuvolve/app/api/autorenew/settings');
+    box.innerHTML = `<div class="card"><h2>Automatic renewal terms</h2>
+      <p class="small muted">California and several other states require recurring plans to show the renewal terms clearly before signing, get a separate tick that the customer agrees, send a copy after, let them cancel online, and remind them before each yearly renewal. With this on, every recurring estimate and new plan does all of that, and each customer gets a cancel-online link.</p>
+      <label class="check"><input type="checkbox" name="on" ${s.on ? 'checked' : ''}> Show renewal terms, ask for the separate tick, and send the copy and reminders</label>
+      <div class="field"><label>Remind them this many days before each yearly renewal (0 = no reminder)</label><input type="number" name="reminder_days" min="0" max="90" value="${s.reminder_days}"></div>
+      <div class="field"><label>Extra terms (optional, English)</label><textarea name="extra" maxlength="600">${esc(s.extra)}</textarea></div>
+      <div class="field"><label>Extra terms in Spanish</label><textarea name="extra_es" maxlength="600">${esc(s.extra_es)}</textarea></div>
+      <p class="small muted">This is a common-sense setup, not legal advice. Have your lawyer check the wording for the states you work in.</p>
+      <button class="btn primary" id="ar-save">Save</button></div>`;
+    $('#ar-save', box).onclick = async () => { try { const f = formData(box); await api('/nuvolve/app/api/autorenew/settings', { method: 'PUT', body: { ...f, reminder_days: Number(f.reminder_days) } }); toast('Saved'); } catch (e) { toast(e.message, true); } };
+  } });
+  NV.slot('customer.actions', ({ c }) => `<button class="btn" data-ar="${c.id}">📜 Renewal consent</button>`);
+  on('[data-ar]', async (b) => {
+    let d;
+    try { d = await api(`/nuvolve/app/api/customers/${b.dataset.ar}/autorenew`); } catch (e) { return toast(e.message, true); }
+    modal('Auto-renewal record', `<p class="small">Cancel-online link: <a href="${esc(d.cancel_url)}" target="_blank" rel="noopener">${esc(d.cancel_url)}</a></p>
+      <h3>Consents</h3>${d.consents.map((k) => `<div class="small" style="padding:6px 0;border-bottom:1px solid var(--line)"><b>${fmtDate(k.created_at)}</b>${k.ip ? ` · ${esc(k.ip)}` : ''}<br>${esc(k.text)}</div>`).join('') || '<p class="small muted">No signed consent on file. Plans added by the office get the terms and the cancel link by email.</p>'}
+      <h3>Notices sent</h3>${d.notices.map((n) => `<div class="small">${fmtDate(n.created_at)} · ${esc(n.kind === 'ack' ? 'Copy of the terms' : 'Renewal reminder')} ${esc(n.period || '')} · ${esc(n.status)}</div>`).join('') || '<p class="small muted">None yet.</p>'}`, [{ label: 'Close' }]);
+  });
+})();
+
+})(); } catch (e) { console.error('feature fieldgaps-reports.js failed to load', e); }
+
+/* ---- features/fieldgaps-schedule.js ---- */
+try { (function () {
+// Office screens for the scheduling gaps: rain-day reschedule (dispatch board and #/rain-day), vacation holds, skips and
+// frequency or seasonal changes (customer page), wildlife and exclusion jobs (#/wildlife and the customer page), and
+// deposits on bed bug and fumigation work (#/deposits, the visit page and a Settings tab). Server side:
+// src/features/weather.js, visit-holds.js, wildlife.js and deposits.js. Office screens are English like the rest of
+// the office app.
+(function () {
+  if (/^\/(tech|portal|pay|track|sign|review|book|offer)/.test(location.pathname)) return;
+  const FREQS = [['monthly', 'Monthly'], ['bimonthly', 'Every 2 months'], ['quarterly', 'Quarterly'], ['yearly', 'Yearly']];
+  const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const opts = (list, cur) => list.map(([v, l]) => `<option value="${esc(v)}" ${String(v) === String(cur) ? 'selected' : ''}>${esc(l)}</option>`).join('');
+  const who = (r) => esc(r.company || r.customer_name || [r.first_name, r.last_name].filter(Boolean).join(' ') || 'Customer');
+  const plural = (n, one, many) => `${n} ${n === 1 ? one : many || `${one}s`}`;
+  const on = (sel, fn) => document.addEventListener('click', (e) => { const b = e.target.closest(sel); if (b) { e.preventDefault(); fn(b, e); } });
+  const isMgr = () => BOOT?.me && ['owner', 'admin', 'manager'].includes(BOOT.me.role);
+
+  // ---------- rain day ----------
+  NV.slot('dispatch.side', ({ d }) => `<div class="card" style="padding:12px 14px"><b>🌧️ Weather day</b>
+    <div class="small muted" style="margin:4px 0 8px">Move the outdoor stops off a rained-out day in one go, and tell the customers.</div>
+    <button class="btn sm block" data-rain="${esc(d?.date || todayStr())}">Move stops off this day</button>
+    <a class="small" href="#/rain-day">Past weather days</a></div>`);
+  on('[data-rain]', (b) => rainModal(b.dataset.rain));
+
+  function rainModal(day) {
+    const m = modal('Move stops for weather', `<div id="rain"><div class="row">
+        <div class="field"><label>Day the weather hit</label><input type="date" name="day" value="${esc(day)}"></div>
+        <div class="field"><label>Reason</label><select name="reason">${['Rain', 'Storms', 'Lightning', 'High wind', 'Ice', 'Extreme heat', 'Flooding', 'Other'].map((r) => `<option>${r}</option>`).join('')}</select></div></div>
+      <div class="row">
+        <div class="field"><label>Move them to</label><select name="mode"><option value="spread">Spread over the next work days (lightest first)</option><option value="next">All to the next work day</option><option value="date">A day I pick</option></select></div>
+        <div class="field" id="rain-spread"><label>Spread over</label><select name="spread_days">${[2, 3, 4, 5].map((n) => `<option value="${n}" ${n === 3 ? 'selected' : ''}>${n} work days</option>`).join('')}</select></div>
+        <div class="field" id="rain-to" hidden><label>Day</label><input type="date" name="to" min="${todayStr()}"></div></div>
+      <div class="field"><label>Techs</label><select name="tech_ids" multiple size="${Math.min(6, (BOOT.techs || []).length + 1)}">${(BOOT.techs || []).map((x) => `<option value="${x.id}">${esc(x.name)}</option>`).join('')}</select>
+        <div class="hint">None picked means every tech.</div></div>
+      <label class="check"><input type="checkbox" name="outdoor_only" checked> Outdoor services only (indoor work like bed bugs stays)</label>
+      <label class="check"><input type="checkbox" name="notify" checked> Text or email each customer their new day</label>
+      <div id="rain-list" style="margin-top:12px"></div></div>`, [
+      { label: 'Cancel' },
+      { label: 'Move stops', cls: 'primary', onClick: async (el) => {
+        const q = query(el);
+        const ids = $$('[data-rv]:checked', el).map((x) => Number(x.dataset.rv));
+        if (!ids.length) { toast('Tick at least one stop to move', true); return false; }
+        const r = await api('/nuvolve/app/api/weather/move', { body: { ...q, visit_ids: ids, reason: formData(el).reason, notify: formData(el).notify } });
+        toast(`Moved ${plural(r.moved, 'stop')}${r.notified ? `, told ${plural(r.notified, 'customer')}` : ''}.`);
+        route();
+      } }]);
+    const box = $('#rain', m.el);
+    const query = (el) => {
+      const f = formData(el);
+      const techs = [...el.querySelector('[name=tech_ids]').selectedOptions].map((o) => o.value);
+      return { day: f.day, mode: f.mode, to: f.to, spread_days: f.spread_days, outdoor_only: f.outdoor_only ? '1' : '0', tech_ids: techs.join(',') };
+    };
+    const load = async () => {
+      const f = formData(box);
+      $('#rain-spread', box).hidden = f.mode !== 'spread';
+      $('#rain-to', box).hidden = f.mode !== 'date';
+      const list = $('#rain-list', box);
+      if (f.mode === 'date' && !f.to) { list.innerHTML = '<p class="small muted">Pick the day they move to.</p>'; return; }
+      try {
+        const p = await api(`/nuvolve/app/api/weather/preview?${new URLSearchParams(query(box))}`);
+        list.innerHTML = p.stops.length ? `<div class="small" style="margin-bottom:6px"><b>${plural(p.stops.length, 'stop')}</b> move: ${Object.entries(p.byDay).map(([d, n]) => `${fmtDay(d)} (${n})`).join(', ')}${p.staying ? `. ${plural(p.staying, 'indoor stop')} stay.` : '.'}</div>
+          <div style="max-height:280px;overflow:auto;border:1px solid var(--line);border-radius:8px">${p.stops.map((s) => `<label class="check" style="padding:6px 10px;border-bottom:1px solid var(--line);margin:0">
+            <input type="checkbox" data-rv="${s.id}" checked> <span><b>${who(s)}</b> · ${esc(s.address)} · ${esc(s.service_name || '')}<br><span class="small muted">${esc(s.tech_name || 'Unassigned')} → ${fmtDay(s.to)}</span></span></label>`).join('')}</div>`
+          : `<p class="small muted">No ${f.outdoor_only ? 'outdoor ' : ''}stops left to move on ${fmtDate(f.day)}.</p>`;
+      } catch (e) { list.innerHTML = `<div class="alert err">${esc(e.message)}</div>`; }
+    };
+    box.addEventListener('change', (e) => { if (!e.target.dataset.rv) load(); });
+    load();
+  }
+
+  NV.page('rain-day', async (view) => {
+    const rows = await api('/nuvolve/app/api/weather/moves');
+    view.innerHTML = `<div class="page-head"><div><h1>🌧️ Weather days</h1><div class="muted">Stops moved off a day for weather, and the undo</div></div>
+      <div class="actions"><button class="btn primary" data-rain="${todayStr()}">Move stops off a day</button></div></div>
+      <div class="card flush"><div class="table-wrap"><table class="list"><thead><tr><th>Day</th><th>Reason</th><th>Stops</th><th>Moved to</th><th>Customers told</th><th>When</th><th></th></tr></thead><tbody>
+      ${rows.length ? rows.map((r) => `<tr><td>${fmtDate(r.day)}</td><td>${esc(r.reason)}</td><td>${r.count}</td><td>${r.targets.map((d) => fmtDay(d)).join(', ')}</td><td>${r.notified || 0}</td>
+        <td class="small">${esc(r.user_name || '')} ${fmtDate(r.created_at)}</td><td>${r.undone_at ? '<span class="pill">Undone</span>' : `<button class="btn sm" data-rain-undo="${r.id}">Undo</button>`}</td></tr>`).join('')
+    : '<tr><td colspan="7" class="empty">No weather days yet.</td></tr>'}</tbody></table></div></div>`;
+  });
+  on('[data-rain-undo]', async (b) => {
+    if (!confirm('Put these stops back on their first day? Stops someone moved again since stay where they are. Customers are not texted.')) return;
+    try { const r = await api(`/nuvolve/app/api/weather/moves/${b.dataset.rainUndo}/undo`, { method: 'POST' }); toast(`${plural(r.back, 'stop')} put back${r.kept ? `, ${r.kept} had moved again and stayed` : ''}.`); route(); } catch (e) { toast(e.message, true); }
+  });
+
+  // ---------- holds, skips and frequency ----------
+  NV.slot('customer.actions', ({ c }) => ((c.plans || []).some((p) => p.active && p.frequency !== 'one_time') ? `<button class="btn" data-hold="${c.id}">⏸️ Hold or skip</button>` : ''));
+  on('[data-hold]', (b) => holdModal(Number(b.dataset.hold)));
+  async function holdModal(customerId) {
+    const d = await api(`/nuvolve/app/api/customers/${customerId}/holds`).catch((e) => toast(e.message, true));
+    if (!d) return;
+    if (!d.plans.length) return toast('No active plans to hold', true);
+    const plans = d.plans.map((p) => [p.id, `${p.service_name || 'Service'} · ${p.season_text || p.frequency} · ${money(p.price)}${p.address ? ` · ${p.address}` : ''}`]);
+    const m = modal('Hold or skip visits', `<div class="tabs"><button class="on" data-hk="vacation">Away (vacation)</button><button data-hk="skip">Skip visits</button></div>
+      <div data-hp="vacation"><div class="row"><div class="field"><label>First day away</label><input type="date" name="start_on" min="${todayStr()}"></div>
+        <div class="field"><label>Last day away</label><input type="date" name="end_on" min="${todayStr()}"></div></div>
+        <div class="field"><label>Visits in that time</label><select name="action"><option value="after">Move to the first work day after they're back</option><option value="skip">Skip them (no visit, no charge)</option></select></div>
+        <div class="field"><label>Which plan</label><select name="plan_id_v"><option value="">All their plans</option>${opts(plans)}</select></div></div>
+      <div data-hp="skip" hidden><div class="row"><div class="field"><label>Plan</label><select name="plan_id_s">${opts(plans)}</select></div>
+        <div class="field"><label>Skip the next</label><select name="count">${[1, 2, 3, 4].map((n) => `<option value="${n}">${plural(n, 'visit')}</option>`).join('')}</select></div></div></div>
+      <div class="field"><label>Reason (optional)</label><input name="reason" maxlength="300" placeholder="Out of town for the summer"></div>
+      ${d.holds.length ? `<h3 style="margin-top:14px">Holds</h3>${d.holds.slice(0, 6).map((h) => `<div class="small" style="padding:6px 0;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:8px">
+        <span>${h.kind === 'skip' ? `Skipped ${plural(h.skip_count, 'visit')}` : `Away ${fmtDate(h.start_on)} to ${fmtDate(h.end_on)} (${h.action === 'after' ? 'moved after' : 'skipped'})`} · ${plural(h.affected.length, 'visit')} · ${esc(h.status)}</span>
+        ${h.status === 'active' || (h.kind === 'skip' && h.end_on >= todayStr() && h.status !== 'lifted') ? `<button class="btn sm" data-hold-lift="${h.id}">Lift</button>` : ''}</div>`).join('')}` : ''}`, [
+      { label: 'Cancel' },
+      { label: 'Save', cls: 'primary', onClick: async (el) => {
+        const kind = $('[data-hk].on', el).dataset.hk;
+        const f = formData(el);
+        const body = kind === 'skip' ? { kind, plan_id: f.plan_id_s, count: Number(f.count), reason: f.reason } : { kind, start_on: f.start_on, end_on: f.end_on, action: f.action, plan_id: f.plan_id_v || null, reason: f.reason };
+        const r = await api(`/nuvolve/app/api/customers/${customerId}/holds`, { body });
+        toast(kind === 'skip' ? `Skipped ${plural(r.skipped, 'visit')}.` : `Hold saved: ${plural(r.moved, 'visit')} moved, ${r.skipped} skipped.`);
+        route();
+      } }]);
+    $$('[data-hk]', m.el).forEach((b) => (b.onclick = () => { $$('[data-hk]', m.el).forEach((x) => x.classList.toggle('on', x === b)); $$('[data-hp]', m.el).forEach((p) => (p.hidden = p.dataset.hp !== b.dataset.hk)); }));
+  }
+  on('[data-hold-lift]', async (b) => {
+    if (!confirm('Lift this hold? Visits it moved go back to their days, and skipped ones come back if the day is still ahead.')) return;
+    try { const r = await api(`/nuvolve/app/api/holds/${b.dataset.holdLift}/lift`, { method: 'POST' }); toast(`${plural(r.back, 'visit')} put back.`); $$('.modal-back').forEach((x) => x.remove()); route(); } catch (e) { toast(e.message, true); }
+  });
+
+  NV.slot('customer.right', ({ c }) => {
+    const plans = (c.plans || []).filter((p) => p.active && p.frequency !== 'one_time');
+    if (!plans.length) return '';
+    return `<div class="card"><div class="card-head"><h2>🗓️ How often</h2></div>${plans.map((p) => `<div style="display:flex;justify-content:space-between;gap:8px;padding:6px 0;border-bottom:1px solid var(--line)">
+      <div class="small"><b>${esc(p.service_name || 'Service')}</b><br>${esc(p.season_text || (p.season_months ? 'Seasonal' : '') || FREQS.find((f) => f[0] === p.frequency)?.[1] || p.frequency)} · ${money(p.price)}</div>
+      <button class="btn sm" data-freq="${p.id}" data-freq-c="${c.id}">Change</button></div>`).join('')}</div>`;
+  });
+  on('[data-freq]', async (b) => {
+    const d = await api(`/nuvolve/app/api/customers/${b.dataset.freqC}/holds`).catch((e) => toast(e.message, true));
+    const p = d?.plans.find((x) => x.id === Number(b.dataset.freq));
+    if (!p) return;
+    const inSeason = String(p.season_months || '').split(',').map(Number);
+    const m = modal('Change how often', `<p class="small muted">${esc(p.service_name || '')}. The next visit${p.next[0] ? ` (${fmtDate(p.next[0])})` : ''} stays; the ones after it follow the new schedule. Mid-contract changes keep the plan and its history.</p>
+      <div class="row"><div class="field"><label>How often</label><select name="frequency">${opts(FREQS, p.frequency)}</select></div>
+        <div class="field"><label>Price per visit</label><input type="number" step="0.01" min="0" name="price" value="${p.price}"></div></div>
+      <label class="check"><input type="checkbox" name="seasonal" ${p.season_months ? 'checked' : ''}> Seasonal: more often in season, less (or none) out of season</label>
+      <div id="fq-season" ${p.season_months ? '' : 'hidden'}><div class="field"><label>In-season months</label><div style="display:flex;flex-wrap:wrap;gap:6px">${MONTHS.map((mo, i) => `<label class="check" style="margin:0"><input type="checkbox" data-mo="${i + 1}" ${inSeason.includes(i + 1) ? 'checked' : ''}> ${mo}</label>`).join('')}</div></div>
+        <div class="row"><div class="field"><label>In season</label><select name="season_frequency">${opts(FREQS, p.season_frequency || 'monthly')}</select></div>
+        <div class="field"><label>Out of season</label><select name="offseason_frequency">${opts([...FREQS, ['none', 'No visits']], p.offseason_frequency || 'quarterly')}</select></div></div></div>
+      <div class="field"><label>Starting (optional)</label><input type="date" name="from_date" min="${todayStr()}"><div class="hint">Leave empty to start after the next visit.</div></div>`, [
+      { label: 'Cancel' },
+      { label: 'Save', cls: 'primary', onClick: async (el) => {
+        const f = formData(el);
+        const months = $$('[data-mo]:checked', el).map((x) => x.dataset.mo).join(',');
+        const r = await api(`/nuvolve/app/api/plans/${p.id}/frequency`, { body: { ...f, season_months: months } });
+        toast(`Saved: ${r.plan.season_text || r.plan.frequency}. Next: ${r.upcoming.slice(0, 3).map((v) => fmtDay(v.date)).join(', ') || 'none'}.`);
+        route();
+      } }]);
+    $('[name=seasonal]', m.el).onchange = (e) => ($('#fq-season', m.el).hidden = !e.target.checked);
+  });
+
+  // ---------- wildlife ----------
+  NV.nav({ href: '#/wildlife', icon: '🦝', label: 'Wildlife jobs', after: '#/dispatch' });
+  NV.slot('customer.actions', ({ c }) => `<button class="btn" data-wl-new="${c.id}">🦝 Wildlife job</button>`);
+  on('[data-wl-new]', (b) => wildlifeNew(Number(b.dataset.wlNew) || null));
+  function wildlifeNew(customerId) {
+    const m = modal('New wildlife or exclusion job', `<div id="wl-who"></div><div id="wl-form" ${customerId ? '' : 'hidden'}>
+      <div class="row"><div class="field"><label>Work</label><select name="kind"><option value="both">Trapping and exclusion</option><option value="trapping">Trapping only</option><option value="exclusion">Exclusion only</option></select></div>
+        <div class="field"><label>Animals</label><input name="animals" placeholder="Raccoon, squirrels" maxlength="200"></div></div>
+      <div class="row"><div class="field"><label>Setup day</label><input type="date" name="date" value="${todayStr()}"></div><div class="field"><label>Tech</label><select name="tech_id">${techOptions('')}</select></div></div>
+      <div class="row"><div class="field"><label>Setup / inspection fee</label><input type="number" step="0.01" name="setup_fee" value="250"></div><div class="field"><label>Per trap check</label><input type="number" step="0.01" name="check_fee" value="35"></div>
+        <div class="field"><label>Per animal removed</label><input type="number" step="0.01" name="animal_fee" value="95"></div></div>
+      <div class="row"><div class="field"><label>Check traps every</label><select name="check_hours">${[[24, '24 hours (most states)'], [12, '12 hours'], [48, '48 hours'], [72, '72 hours']].map(([h, l]) => `<option value="${h}">${l}</option>`).join('')}</select></div>
+        <div class="field"><label>Exclusion warranty</label><select name="warranty_months">${[0, 6, 12, 24, 36].map((n) => `<option value="${n}" ${n === 12 ? 'selected' : ''}>${n ? `${n} months` : 'None'}</option>`).join('')}</select></div></div>
+      <div class="field"><label>Notes</label><textarea name="notes" maxlength="2000" placeholder="Entry under the eave by the chimney"></textarea></div></div>`, [
+      { label: 'Cancel' },
+      { label: 'Create job', cls: 'primary', onClick: async (el) => {
+        if (!customerId) { toast('Pick the customer', true); return false; }
+        const j = await api('/nuvolve/app/api/wildlife/jobs', { body: { ...formData(el), customer_id: customerId } });
+        toast('Job created and the setup visit booked');
+        location.hash = `#/wildlife/${j.id}`;
+      } }]);
+    if (!customerId) customerPicker($('#wl-who', m.el), (c) => { customerId = c.id; $('#wl-who', m.el).innerHTML = `<p><b>${who(c)}</b></p>`; $('#wl-form', m.el).hidden = false; });
+  }
+  NV.page('wildlife', async (view, id, params) => {
+    if (id) return wildlifeJob(view, id);
+    const status = ['closed', 'cancelled'].includes(params.status) ? params.status : 'open';
+    const rows = await api(`/nuvolve/app/api/wildlife/jobs?status=${status}`);
+    view.innerHTML = `<div class="page-head"><div><h1>🦝 Wildlife jobs</h1><div class="muted">Trapping, checks, exclusion repairs and warranties</div></div>
+      <div class="actions"><button class="btn primary" data-wl-new="">New job</button></div></div>
+      <div class="tabs">${['open', 'closed', 'cancelled'].map((s) => `<a href="#/wildlife?status=${s}" class="${s === status ? 'on' : ''}" style="padding:9px 14px;text-decoration:none;font-weight:600">${s[0].toUpperCase()}${s.slice(1)}</a>`).join('')}</div>
+      <div class="card flush"><div class="table-wrap"><table class="list"><thead><tr><th>Customer</th><th>Animals</th><th>Tech</th><th>Traps set</th><th>Caught</th><th>Next visit</th><th></th></tr></thead><tbody>
+      ${rows.length ? rows.map((r) => `<tr><td><b>${who(r)}</b><div class="small muted">${esc(r.address || '')}</div></td><td>${esc(r.animals)}<div class="small muted">${esc(r.kind)}</div></td><td>${esc(r.tech_name || '')}</td>
+        <td>${r.traps_set}${r.overdue ? ' <span class="pill red">Check overdue</span>' : ''}</td><td>${r.animals_caught}</td><td>${r.next_visit ? fmtDay(r.next_visit) : ''}</td><td><a class="btn sm" href="#/wildlife/${r.id}">Open</a></td></tr>`).join('')
+    : '<tr><td colspan="7" class="empty">No jobs here.</td></tr>'}</tbody></table></div></div>`;
+  });
+  async function wildlifeJob(view, id) {
+    const j = await api(`/nuvolve/app/api/wildlife/jobs/${id}`);
+    const open = j.status === 'open';
+    view.innerHTML = `<div class="page-head"><div><h1>🦝 ${who(j)}</h1><div class="muted">${esc(j.animals)} · ${esc(j.kind)} · ${esc(j.address || '')} · ${esc(j.status)}${j.warranty_until ? ` · warranty until ${fmtDate(j.warranty_until)}` : ''}</div></div>
+      <div class="actions"><a class="btn" href="#/customers/${j.customer_id}">Customer</a>${open ? `<button class="btn" data-wl-checks="${j.id}">Book daily checks</button><button class="btn primary" data-wl-close="${j.id}">Close and bill</button><button class="btn" data-wl-cancel="${j.id}">Cancel job</button>` : ''}</div></div>
+      ${j.totals.overdue ? `<div class="alert err"><span>⏰ ${plural(j.totals.overdue, 'trap')} past the ${j.check_hours}-hour check. Most states require a set trap to be checked every day.</span></div>` : ''}
+      <div class="stats"><div class="stat"><div class="label">Traps set</div><div class="value">${j.totals.traps_set}</div></div><div class="stat"><div class="label">Animals removed</div><div class="value">${j.totals.animals}</div><div class="sub">${j.totals.unbilled_animals} not billed yet</div></div>
+        <div class="stat"><div class="label">Repairs</div><div class="value">${j.totals.repairs_done} done</div><div class="sub">${j.totals.repairs_open} planned</div></div>
+        <div class="stat"><div class="label">Fees</div><div class="value small">${money(j.setup_fee)} setup</div><div class="sub">${money(j.check_fee)}/check · ${money(j.animal_fee)}/animal</div></div></div>
+      <div class="grid2" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px">
+        <div class="card"><h2>Traps</h2>${j.traps.map((t) => `<div class="small" style="padding:6px 0;border-bottom:1px solid var(--line)"><b>${esc(t.label)}</b> · ${esc(t.trap_type)} · ${esc(t.location || '')} · ${esc(t.status)}${t.overdue ? ' <span class="pill red">Overdue</span>' : ''}<br><span class="muted">Set ${fmtDate(t.set_at)}${t.last_checked_at ? `, last checked ${fmtDate(t.last_checked_at)}` : ''}</span></div>`).join('') || '<p class="muted small">No traps set yet. The tech sets them from the stop.</p>'}</div>
+        <div class="card"><h2>Exclusion repairs</h2>${j.repairs.map((r) => `<div class="small" style="padding:6px 0;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:8px"><span><b>${esc(r.location)}</b> · ${esc(r.material || '')} ${esc(r.size || '')} · ${money(r.price)} · ${esc(r.status)}</span>
+          ${open ? `<button class="btn sm" data-wl-rprice="${r.id}" data-p="${r.price}">Price</button>` : ''}</div>`).join('') || '<p class="muted small">No repairs yet.</p>'}
+          ${open ? `<button class="btn sm" data-wl-repair="${j.id}" style="margin-top:8px">Add a repair</button>` : ''}</div>
+        <div class="card"><h2>Visits</h2>${j.visits.map((v) => `<div class="small" style="padding:4px 0"><a href="#/visits/${v.id}">${fmtDay(v.date)}</a> ${statusPill(v.status)} ${money(v.price)} · ${esc(v.tech_name || '')}</div>`).join('')}</div>
+        <div class="card"><h2>Check log</h2>${j.checks.slice(0, 40).map((k) => `<div class="small" style="padding:4px 0;border-bottom:1px solid var(--line)">${fmtDate(k.checked_at)} · ${esc(k.trap_label || '')}: <b>${esc(k.result)}</b>${k.animal ? ` · ${k.count} ${esc(k.animal)} (${esc(k.disposition)})` : ''} · ${esc(k.user_name || '')}${k.notes ? `<br>${esc(k.notes)}` : ''}</div>`).join('') || '<p class="muted small">No checks yet.</p>'}</div>
+      </div>`;
+  }
+  const reload = () => route();
+  on('[data-wl-checks]', (b) => {
+    modal('Book trap checks', `<div class="row"><div class="field"><label>Starting</label><input type="date" name="from" value="${addDays(todayStr(), 1)}"></div><div class="field"><label>For</label><select name="days">${[3, 5, 7, 10, 14].map((n) => `<option value="${n}" ${n === 5 ? 'selected' : ''}>${n} days</option>`).join('')}</select></div></div>
+      <div class="field"><label>Tech</label><select name="tech_id">${techOptions('', 'The job’s tech')}</select></div><p class="small muted">One check a day, weekends included. Each is billed at the per-check fee.</p>`, [
+      { label: 'Cancel' }, { label: 'Book', cls: 'primary', onClick: async (el) => { const r = await api(`/nuvolve/app/api/wildlife/jobs/${b.dataset.wlChecks}/checks`, { body: { ...formData(el), days: Number(formData(el).days) } }); toast(`${plural(r.scheduled, 'check')} booked`); reload(); } }]);
+  });
+  on('[data-wl-repair]', (b) => {
+    modal('Add an exclusion repair', `<div class="field"><label>Where</label><input name="location" maxlength="200" placeholder="Soffit return, north side"></div>
+      <div class="row"><div class="field"><label>Material</label><input name="material" placeholder="1/4in galvanized mesh"></div><div class="field"><label>Size</label><input name="size" placeholder="2 ft"></div><div class="field"><label>Price</label><input type="number" step="0.01" name="price"></div></div>`, [
+      { label: 'Cancel' }, { label: 'Add', cls: 'primary', onClick: async (el) => { await api(`/nuvolve/app/api/wildlife/jobs/${b.dataset.wlRepair}/repairs`, { body: formData(el) }); reload(); } }]);
+  });
+  on('[data-wl-rprice]', async (b) => {
+    const p = prompt('Price for this repair', b.dataset.p);
+    if (p == null) return;
+    try { await api(`/nuvolve/app/api/wildlife/repairs/${b.dataset.wlRprice}`, { method: 'PUT', body: { price: p } }); reload(); } catch (e) { toast(e.message, true); }
+  });
+  on('[data-wl-close]', (b) => {
+    modal('Close and bill this job', `<p>Bills each animal removed at the per-animal fee plus every finished repair, cancels any checks left, and starts the warranty.</p>
+      <div class="row"><div class="field"><label>Warranty (months)</label><input type="number" name="warranty_months" min="0" max="120" placeholder="Job default"></div>
+      <div class="field"><label>Book a follow-up in</label><select name="follow_up_days"><option value="0">No follow-up</option>${[30, 60, 90].map((n) => `<option value="${n}">${n} days</option>`).join('')}</select></div></div>`, [
+      { label: 'Cancel' }, { label: 'Close and bill', cls: 'primary', onClick: async (el) => {
+        const f = formData(el);
+        const r = await api(`/nuvolve/app/api/wildlife/jobs/${b.dataset.wlClose}/close`, { body: { warranty_months: f.warranty_months === '' ? null : Number(f.warranty_months), follow_up_days: Number(f.follow_up_days) } });
+        toast(r.invoice_id ? `Closed. Invoice for ${money(r.amount)}.` : 'Closed.');
+        reload();
+      } }]);
+  });
+  on('[data-wl-cancel]', async (b) => {
+    if (!confirm('Cancel this job? Upcoming checks are cancelled. Pull any traps still set first.')) return;
+    try { await api(`/nuvolve/app/api/wildlife/jobs/${b.dataset.wlCancel}/cancel`, { method: 'POST' }); reload(); } catch (e) { toast(e.message, true); }
+  });
+
+  // ---------- deposits ----------
+  NV.nav({ href: '#/deposits', icon: '💵', label: 'Deposits', after: '#/collections' });
+  const DEP = { paid: ['green', 'Paid'], partial: ['yellow', 'Part paid'], due: ['yellow', 'Due'], late: ['red', 'Late'], decide: ['red', 'Job cancelled: decide'], void: ['', 'Void'] };
+  const depPill = (s) => `<span class="pill ${(DEP[s] || ['', s])[0]}">${esc((DEP[s] || ['', s])[1])}</span>`;
+  NV.page('deposits', async (view) => {
+    const rows = await api('/nuvolve/app/api/deposits');
+    view.innerHTML = `<div class="page-head"><div><h1>💵 Deposits</h1><div class="muted">Deposits on bed bug, fumigation and other prep-heavy jobs. The final invoice takes the deposit off.</div></div>
+      ${BOOT.me.isAdmin ? '<div class="actions"><a class="btn" href="#/settings?tab=deposits">⚙️ Which services take a deposit</a></div>' : ''}</div>
+      <div class="card flush"><div class="table-wrap"><table class="list"><thead><tr><th>Job day</th><th>Customer</th><th>Service</th><th>Deposit</th><th>Paid</th><th>Due</th><th>State</th><th></th></tr></thead><tbody>
+      ${rows.length ? rows.map((r) => `<tr><td>${fmtDay(r.date)}</td><td><a href="#/customers/${r.customer_id}">${who(r)}</a><div class="small muted">${esc(r.address)}</div></td><td>${esc(r.service_name || '')}<div class="small muted">${money(r.price)} job</div></td>
+        <td>${money(r.amount)}</td><td>${money(r.amount_paid)}</td><td>${fmtDate(r.due_date)}</td><td>${depPill(r.state)}</td>
+        <td>${r.state === 'decide' && isMgr() ? `<button class="btn sm" data-dep="${r.visit_id}" data-outcome="refunded">Refund</button> <button class="btn sm" data-dep="${r.visit_id}" data-outcome="kept">Keep</button>` : `<a class="btn sm" href="#/visits/${r.visit_id}">Visit</a>`}</td></tr>`).join('')
+    : '<tr><td colspan="8" class="empty">No deposits waiting.</td></tr>'}</tbody></table></div></div>`;
+  });
+  on('[data-dep]', async (b) => {
+    const refund = b.dataset.outcome === 'refunded';
+    if (!confirm(refund ? 'Give the deposit back? It is recorded as a refund.' : 'Keep the deposit? Check your cancellation terms first.')) return;
+    try { await api(`/nuvolve/app/api/deposits/${b.dataset.dep}/outcome`, { body: { outcome: b.dataset.outcome } }); toast(refund ? 'Refund recorded' : 'Deposit kept'); route(); } catch (e) { toast(e.message, true); }
+  });
+  NV.slot('visit.right', ({ v }) => (v.deposit_invoice_id ? `<div class="card" data-dep-card="${v.id}"><h2>💵 Deposit</h2><p class="small muted">Loading...</p></div>` : ''));
+  NV.on('visit.rendered', async ({ v, view }) => {
+    const card = view && $(`[data-dep-card="${v.id}"]`, view);
+    if (!card) return;
+    const d = await api(`/nuvolve/app/api/visits/${v.id}/deposit`).catch(() => null);
+    card.innerHTML = d ? `<h2>💵 Deposit</h2><p>${money(d.amount)} ${depPill(d.state)}</p><div class="small">${money(d.paid)} paid · due ${fmtDate(d.due_date)} · <a href="#/invoices/${d.invoice_id}">Invoice #${d.invoice_id}</a></div>
+      <div class="small muted" style="margin-top:6px">Comes off the final invoice when the job is done.</div>` : '<h2>💵 Deposit</h2><p class="small muted">None.</p>';
+  });
+
+  // Settings: which services take a deposit, and which are outdoor (move on a rain day).
+  NV.settingsTab({ key: 'deposits', label: 'Deposits & weather', async render(box) {
+    const types = BOOT.serviceTypes || [];
+    box.innerHTML = `<div class="card"><h2>Deposits</h2><p class="small muted">A job on one of these services gets a deposit invoice when it's booked, due the set number of days before the job. Use a percent or a flat amount.</p>
+      <table class="list"><thead><tr><th>Service</th><th>Percent</th><th>Or flat $</th><th>Due days before</th><th>Outdoor (rain day)</th></tr></thead><tbody>
+      ${types.map((s) => `<tr data-st="${s.id}"><td>${esc(s.name)}</td><td><input type="number" min="0" max="100" name="deposit_percent" value="${s.deposit_percent ?? ''}" style="width:80px"></td>
+        <td><input type="number" min="0" step="0.01" name="deposit_flat" value="${s.deposit_flat ?? ''}" style="width:100px"></td><td><input type="number" min="0" max="60" name="deposit_due_days" value="${s.deposit_due_days ?? ''}" style="width:80px"></td>
+        <td><input type="checkbox" name="weather_sensitive" ${s.weather_sensitive === 0 ? '' : 'checked'}></td></tr>`).join('')}</tbody></table>
+      <button class="btn primary" id="dep-save" style="margin-top:12px">Save</button></div>`;
+    $('#dep-save', box).onclick = async () => {
+      try {
+        for (const tr of $$('[data-st]', box)) {
+          const f = formData(tr);
+          await api(`/nuvolve/app/api/service-types/${tr.dataset.st}/deposit`, { method: 'PUT', body: f });
+          await api(`/nuvolve/app/api/service-types/${tr.dataset.st}/weather`, { method: 'PUT', body: { weather_sensitive: f.weather_sensitive } });
+        }
+        toast('Saved');
+      } catch (e) { toast(e.message, true); }
+    };
+  } });
+})();
+
+})(); } catch (e) { console.error('feature fieldgaps-schedule.js failed to load', e); }
+
 /* ---- features/fieldsync.js ---- */
 try { (function () {
 // Offline conflicts and arrival texts (server side: src/features/fieldsync.js and fieldsync-eta.js).
@@ -1436,6 +2526,570 @@ NV.on('boot', ({ boot }) => {
 });
 
 })(); } catch (e) { console.error('feature fieldsync.js failed to load', e); }
+
+/* ---- features/golive.js ---- */
+try { (function () {
+// Going live (src/features/golive.js): the go-live checklist at #/golive, the practice stop, sample customers with a
+// short tour, and the guided Stripe step (also used by the first-run setup's "Email, texts, payments" step).
+let me = null;
+let navAdded = false;
+NV.on('boot', ({ boot }) => {
+  me = boot?.me || null;
+  // A sidebar link while there's still something to do (boot comes before the sidebar is drawn).
+  if (!navAdded && me?.golive && !me.golive.complete) { NV.nav({ href: '#/golive', icon: '✅', label: 'Go live', role: 'admin', after: '#/' }); navAdded = true; }
+});
+
+const g = () => me?.golive || null;
+NV.slot('today.alerts', () => {
+  const s = g();
+  if (!s) return '';
+  let out = '';
+  if (s.sample) out += `<div class="alert warn"><span>🧪 <b>${Number(s.sample)} sample customers</b> are in your schedule, billing and reports. Remove them before your first real day.</span>
+    <a class="btn sm" href="#/golive">Go-live checklist</a></div>`;
+  // The first-run setup has its own banner while it's still open.
+  if (!s.complete && !s.dismissed && !me.onboarding) out += `<div class="alert info"><span>✅ <b>Go-live checklist:</b> ${Number(s.done)} of ${Number(s.total)} done.</span>
+    <a class="btn sm primary" href="#/golive">Open it</a></div>`;
+  return out;
+});
+
+function addStyles() {
+  if (document.getElementById('gl-css')) return;
+  const css = document.createElement('style');
+  css.id = 'gl-css';
+  css.textContent = `
+    .gl { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 16px; align-items: start; }
+    .gl-bar { height: 8px; border-radius: 4px; background: var(--line); overflow: hidden; margin-top: 8px; }
+    .gl-bar span { display: block; height: 100%; background: var(--brand); }
+    .gl-list { list-style: none; margin: 0; padding: 0; }
+    .gl-list > li { display: flex; gap: 12px; align-items: flex-start; padding: 12px 0; border-top: 1px solid var(--line); }
+    .gl-list > li:first-child { border-top: 0; }
+    .gl-list .tick { width: 26px; height: 26px; border-radius: 50%; border: 2px solid #cbd5e0; display: grid; place-items: center; font-weight: 700; flex-shrink: 0; }
+    .gl-list > li.done .tick { background: var(--brand); border-color: var(--brand); color: #fff; }
+    .gl-list > li.done b { text-decoration: line-through; opacity: .7; }
+    .gl-list .grow { flex: 1; min-width: 0; }
+    .gl-steps { margin: 8px 0 0; padding-left: 20px; }
+    .gl-steps li { padding: 4px 0; }
+    .gl-qr { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+    .gl-qr svg { width: 160px; height: 160px; background: #fff; border-radius: 8px; }
+    .gl-tour { position: fixed; right: 16px; bottom: 16px; z-index: 900; width: min(360px, calc(100vw - 32px)); background: var(--panel); color: inherit;
+      border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,.25); padding: 16px; border: 1px solid var(--line); }
+    .gl-tour h3 { margin: 0 0 6px; }
+    .gl-ok { color: var(--brand); font-weight: 600; }
+    @media (max-width: 900px) { .gl { grid-template-columns: minmax(0, 1fr); } }`;
+  document.head.appendChild(css);
+}
+
+// ---------- the guided Stripe step ----------
+// Draws into el. opts.compact: the setup page's smaller version. opts.onDone(result) after a good check.
+function stripeGuide(el, opts = {}) {
+  addStyles();
+  const keySet = Boolean(opts.keySet);
+  const ask = () => {
+    el.innerHTML = `<h3 style="margin:0 0 6px">Card and bank payments</h3>
+      <p class="small">Customers pay on their pay link or with a card on file, and Stripe puts the money straight into your bank. Nuvolve never holds it.</p>
+      ${keySet ? '<p class="small"><span class="pill green">Key saved</span> <button type="button" class="btn sm" data-gl="recheck">Check it with Stripe</button></p>' : ''}
+      <div class="actions"><button type="button" class="btn ${keySet ? '' : 'primary'}" data-gl="have">I have a Stripe account</button>
+        <button type="button" class="btn" data-gl="new">Help me set one up</button>
+        ${opts.compact ? '' : '<button type="button" class="btn" data-gl="later">Not now: I take cash and checks</button>'}</div>
+      <div data-gl="out"></div>`;
+    wire();
+  };
+  const steps = (fresh) => {
+    el.innerHTML = `<h3 style="margin:0 0 6px">${fresh ? 'Set up Stripe (about 10 minutes)' : 'Connect your Stripe account'}</h3>
+      <ol class="gl-steps">
+        ${fresh ? `<li>Open <a href="https://dashboard.stripe.com/register" target="_blank" rel="noopener">dashboard.stripe.com/register</a> and make an account with your business email.</li>
+          <li>Have these ready: your EIN (or SSN if you're a sole owner), your business address and phone, and the bank account and routing number payouts go to.</li>
+          <li>In Stripe, click <b>Activate payments</b> on the Home page and answer the questions. Stripe checks them, usually within minutes.</li>` : ''}
+        <li>In Stripe, open <b>Developers → API keys</b> (<a href="https://dashboard.stripe.com/apikeys" target="_blank" rel="noopener">open it</a>). Click <b>Reveal</b> next to the <b>Secret key</b> and copy it.
+          <div class="hint">It starts with <code>sk_live_</code>. To try it first with pretend cards, turn on <b>Test mode</b> in Stripe and copy the <code>sk_test_</code> key.</div></li>
+        <li>Paste it here. Nuvolve asks Stripe whether the account is ready and tells you anything Stripe still needs.</li>
+      </ol>
+      <div class="field" style="margin-top:10px"><label>Stripe secret key</label><input data-gl="key" autocomplete="off" spellcheck="false" placeholder="sk_live_..."></div>
+      <div class="actions"><button type="button" class="btn primary" data-gl="check">Check and save</button><button type="button" class="btn" data-gl="back">Back</button></div>
+      <div data-gl="out"></div>`;
+    wire();
+  };
+  const show = (r) => {
+    const out = $('[data-gl="out"]', el);
+    if (!out) return;
+    out.innerHTML = `<div class="alert ${r.ready ? 'ok' : 'warn'}" style="margin-top:12px"><span>
+      ${r.ready ? `<span class="gl-ok">✓ Connected</span> to <b>${esc(r.account.name || 'your Stripe account')}</b>${r.live ? '' : ' in <b>test mode</b> (pretend cards only)'}.` : `Saved, but <b>${esc(r.account.name || 'this Stripe account')}</b> isn't ready to take payments yet.`}
+      ${r.todo.length ? `<ul style="margin:6px 0 0;padding-left:18px">${r.todo.map((t) => `<li>${esc(t)}</li>`).join('')}</ul>` : ''}
+      ${r.ready ? '<div class="small" style="margin-top:6px">Last step: add the Stripe webhook in <a href="#/settings?tab=payments">Settings → Payments</a>, so bank payments and disputes come back on their own.</div>' : '<div class="small" style="margin-top:6px">Come back and press "Check it with Stripe" once you\'ve finished in Stripe.</div>'}
+      </span></div>`;
+  };
+  const check = async (key) => {
+    const r = await api('/nuvolve/app/api/golive/stripe-check', { body: key ? { key } : {} });
+    show(r);
+    if (opts.onDone) opts.onDone(r);
+    return r;
+  };
+  function wire() {
+    const on = (k, fn) => { const b = $(`[data-gl="${k}"]`, el); if (b) b.onclick = async () => { b.disabled = true; try { await fn(); } catch (e) { toast(e.message, true); } b.disabled = false; }; };
+    on('have', () => steps(false));
+    on('new', () => steps(true));
+    on('back', ask);
+    on('recheck', () => check());
+    on('later', () => { toast('No problem. Record cash and checks on any invoice, and connect Stripe from this checklist any time.'); if (opts.onLater) opts.onLater(); });
+    on('check', async () => {
+      const key = $('[data-gl="key"]', el).value.trim();
+      if (!key) throw new Error('Paste your Stripe secret key first');
+      await check(key);
+    });
+  }
+  ask();
+}
+
+// ---------- the tour ----------
+const TOUR = [
+  ['#/', 'Today', 'Your day at a glance: routes in progress, money collected, what\'s past due and anything customers asked for.'],
+  ['#/customers', 'Customers', 'Everyone you service. Open one to see their address, plan, visits, bills and messages in one place.'],
+  ['#/schedule', 'Schedule', 'Visits from service plans land here on your work days by themselves. Drag a visit to move it.'],
+  ['#/routes', 'Routes', 'Each tech\'s day on a map. "Fastest order" plans the drive and keeps promised time windows.'],
+  ['#/dispatch', 'Dispatch', 'Where every truck is right now, from the tech app, and who is running late.'],
+  ['#/billing', 'Billing', 'Open bills, cards on file and payment reminders. Customers pay from a link in their email or text.'],
+  ['#/reports', 'Reports', 'Your state\'s chemical use records, built from every ticket your techs finish.'],
+  ['#/golive', 'You\'re ready', 'That\'s the tour. Run a practice stop on your phone next, then remove the sample customers when you\'re done looking around.'],
+];
+const tourAt = () => { try { const v = sessionStorage.getItem('nv_tour'); if (v == null || v === '') return null; const n = Number(v); return Number.isInteger(n) && n >= 0 && n < TOUR.length ? n : null; } catch { return null; } };
+const tourSet = (n) => { try { if (n == null) sessionStorage.removeItem('nv_tour'); else sessionStorage.setItem('nv_tour', String(n)); } catch { /* private mode */ } };
+function drawTour() {
+  addStyles();
+  document.querySelector('.gl-tour')?.remove();
+  const n = tourAt();
+  if (n == null) return;
+  const [hash, title, text] = TOUR[n];
+  const card = document.createElement('div');
+  card.className = 'gl-tour';
+  card.setAttribute('role', 'dialog');
+  card.innerHTML = `<div class="small muted">Tour · ${n + 1} of ${TOUR.length}</div><h3>${esc(title)}</h3><p class="small">${esc(text)}</p>
+    <div class="actions">${n < TOUR.length - 1 ? '<button class="btn sm primary" data-t="next">Next</button>' : '<button class="btn sm primary" data-t="end">Done</button>'}
+      ${n > 0 ? '<button class="btn sm" data-t="back">Back</button>' : ''}${n < TOUR.length - 1 ? '<button class="btn sm" data-t="end">End tour</button>' : ''}</div>`;
+  document.body.appendChild(card);
+  const go = (k) => { tourSet(k); if (k == null) { card.remove(); return; } const h = TOUR[k][0]; if (location.hash === h || (h === '#/' && !location.hash)) drawTour(); else location.hash = h; };
+  card.querySelectorAll('[data-t]').forEach((b) => (b.onclick = () => go(b.dataset.t === 'next' ? n + 1 : b.dataset.t === 'back' ? n - 1 : null)));
+  if (location.hash !== hash && !(hash === '#/' && !location.hash)) location.hash = hash;
+}
+NV.on('page', () => { if (tourAt() != null) drawTour(); });
+const startTour = () => { tourSet(0); if (location.hash === '#/' || !location.hash) drawTour(); else location.hash = '#/'; };
+
+window.NVGolive = { stripeGuide, startTour };
+
+// ---------- the practice stop ----------
+async function practice(redraw) {
+  const s = await api('/nuvolve/app/api/settings');
+  const people = s.users.filter((u) => u.active && (u.runs_routes || u.role === 'tech' || u.id === me?.id));
+  const m = modal('Run a practice stop', `<p>We'll put one free stop at your shop on today's route. Open the tech app on your phone and run it start to finish, the same way a tech runs a real day.</p>
+    <div class="field"><label>Whose phone?</label><select id="gl-who">${people.map((u) => `<option value="${Number(u.id)}" ${u.id === me?.id ? 'selected' : ''}>${esc(u.name)}${u.id === me?.id ? ' (me)' : ''}</option>`).join('')}</select>
+      <div class="hint">It goes on their route today. Nothing is billed, texted or emailed.</div></div>
+    <div id="gl-p-out"></div>`, [{ label: 'Make the practice stop', cls: 'primary', onClick: async (el) => {
+    const r = await api('/nuvolve/app/api/golive/practice', { body: { user_id: Number($('#gl-who', el).value) } });
+    $('.mf', el)?.remove();
+    $('#gl-p-out', el).innerHTML = `<div class="gl-qr">${r.qr || ''}<div>
+        <ol class="gl-steps">
+          <li>On ${esc(r.user.name === me?.name ? 'your' : `${r.user.name}'s`)} phone, scan this or open <b>${esc(r.url)}</b>.</li>
+          <li>Log in${r.user.email ? ` as <b>${esc(r.user.email)}</b>` : ''}. Tip: Share → <b>Add to Home Screen</b> makes it an app that works without signal.</li>
+          <li>Tap <b>Practice Stop</b>, then start it, add a note and a photo, and finish it.</li>
+        </ol>
+        <p class="small muted" id="gl-wait">Waiting for the stop to be finished…</p></div></div>`;
+    const poll = async () => {
+      if (!document.body.contains(el)) return;
+      try {
+        const d = await api('/nuvolve/app/api/golive');
+        if (d.practice?.status === 'completed') {
+          $('#gl-wait', el).innerHTML = '<span class="gl-ok">🎉 Done! That\'s exactly how your techs will run their day.</span>';
+          toast('Practice stop finished');
+          if (redraw) redraw();
+          return;
+        }
+      } catch { /* try again */ }
+      setTimeout(poll, 4000);
+    };
+    setTimeout(poll, 4000);
+    return false;
+  } }]);
+  return m;
+}
+
+// ---------- the page ----------
+NV.page('golive', async (view) => {
+  addStyles();
+  const draw = async () => {
+    const d = await api('/nuvolve/app/api/golive');
+    if (me) me.golive = { done: d.done, total: d.total, complete: d.complete, dismissed: d.dismissed, sample: d.sample.count };
+    const pct = d.total ? Math.round((d.done / d.total) * 100) : 0;
+    const sup = d.support || {};
+    const tel = (p) => String(p).replace(/[^\d+]/g, '');
+    const btn = (i) => {
+      if (i.done) return '';
+      if (i.action === 'practice') return '<button class="btn sm primary" data-act="practice">Start</button>';
+      if (i.action === 'stripe') return '<button class="btn sm primary" data-act="stripe">Set up</button>';
+      if (i.action === 'sample-remove') return '<button class="btn sm" data-act="sample-remove">Remove them</button>';
+      return i.href ? `<a class="btn sm" href="${esc(i.href)}">Open</a>` : '';
+    };
+    view.innerHTML = `
+      <div class="page-head"><div><h1>${d.complete ? 'You\'re live 🎉' : 'Go-live checklist'}</h1>
+        <div class="muted">${d.done} of ${d.total} done. Each step ticks itself off when it's really done, wherever you do it.</div>
+        <div class="gl-bar" style="max-width:420px"><span style="width:${pct}%"></span></div></div>
+        <div class="actions">${d.dismissed ? '<button class="btn" id="gl-show">Show on Today again</button>' : '<button class="btn" id="gl-hide">Hide from Today</button>'}</div></div>
+      <div class="gl">
+        <div class="card"><ul class="gl-list">${d.items.map((i) => `<li class="${i.done ? 'done' : ''}"><span class="tick">${i.done ? '✓' : ''}</span>
+          <div class="grow"><b>${esc(i.title)}</b>${i.optional ? ' <span class="small muted">(optional)</span>' : ''}<div class="small muted">${esc(i.why)}</div>
+            ${!i.done && i.help ? `<div class="small">${esc(i.help)}</div>` : ''}${i.key === 'payments' && !i.done ? '<div id="gl-stripe"></div>' : ''}</div>
+          <div>${btn(i)}</div></li>`).join('')}</ul></div>
+        <div>
+          <div class="card"><h3 style="margin-top:0">Look around first</h3>
+            ${d.sample.count ? `<p class="small">${d.sample.count} sample customers are loaded, with visits on the schedule and some bills paid and owed.</p>
+              <div class="actions"><button class="btn sm primary" data-act="tour">Take the tour</button><button class="btn sm" data-act="sample-remove">Remove sample data</button></div>`
+              : `<p class="small">Load 24 made-up customers near your shop, with visits this week and a few bills, then take a 2-minute tour. One button removes them all.</p>
+              <div class="actions"><button class="btn sm primary" data-act="sample-load">Load sample data</button><button class="btn sm" data-act="tour">Just the tour</button></div>`}</div>
+          <div class="card"><h3 style="margin-top:0">Need a hand?</h3>
+            <p class="small">A real person helps you get set up${sup.hours ? `, ${esc(sup.hours)}` : ''}.</p>
+            <ul class="small" style="padding-left:18px;margin:0">
+              ${sup.phone ? `<li>Call or text <a href="tel:${esc(tel(sup.phone))}">${esc(sup.phone)}</a></li>` : ''}
+              ${sup.email ? `<li>Email <a href="mailto:${esc(sup.email)}">${esc(sup.email)}</a></li>` : ''}
+              ${sup.channel ? `<li><a href="${esc(sup.channel)}" target="_blank" rel="noopener">Your shared support channel</a></li>` : ''}
+              ${!sup.phone && !sup.email && !sup.channel ? '<li>Ask whoever runs your Nuvolve server.</li>' : ''}
+            </ul></div>
+          ${d.timings.hoursToFirstRoute != null ? `<div class="card"><h3 style="margin-top:0">Your first route</h3><p class="small">Finished ${esc(fmtHours(d.timings.hoursToFirstRoute))} after you signed up.</p></div>` : ''}
+        </div>
+      </div>`;
+    const stripeBox = $('#gl-stripe', view);
+    if (stripeBox) stripeBox.style.display = 'none';
+    const act = (k, fn) => $$(`[data-act="${k}"]`, view).forEach((b) => (b.onclick = async () => { b.disabled = true; try { await fn(); } catch (e) { toast(e.message, true); } b.disabled = false; }));
+    act('practice', () => practice(draw));
+    act('stripe', () => {
+      stripeBox.style.display = '';
+      stripeGuide(stripeBox, { keySet: Boolean(BOOT?.settings?.stripe_key_set), onDone: (r) => { if (r.ready) setTimeout(draw, 2500); } });
+    });
+    act('sample-load', async () => { const r = await api('/nuvolve/app/api/golive/sample', { method: 'POST' }); toast(`${r.added} sample customers added`); startTour(); });
+    act('sample-remove', async () => {
+      if (!confirm('Remove every sample customer, with their visits and bills? Your real customers stay.')) return;
+      const r = await api('/nuvolve/app/api/golive/sample', { method: 'DELETE' });
+      toast(`${r.removed} sample customer${r.removed === 1 ? '' : 's'} removed`);
+      draw();
+    });
+    act('tour', async () => startTour());
+    if ($('#gl-hide', view)) $('#gl-hide', view).onclick = async () => { await api('/nuvolve/app/api/golive', { method: 'PUT', body: { dismissed: true } }); toast('Hidden from Today. Open it from Go live in the sidebar.'); draw(); };
+    if ($('#gl-show', view)) $('#gl-show', view).onclick = async () => { await api('/nuvolve/app/api/golive', { method: 'PUT', body: { dismissed: false } }); draw(); };
+  };
+  await draw();
+});
+
+function fmtHours(h) {
+  if (h < 1) return 'less than an hour';
+  if (h < 48) return `${Math.round(h)} hour${Math.round(h) === 1 ? '' : 's'}`;
+  return `${Math.round(h / 24)} days`;
+}
+
+// ---------- the Companies page (platform admins) ----------
+NV.on('page', ({ name, view }) => {
+  if (name !== 'platform') return;
+  setTimeout(async () => {
+    if (!$('.stats', view) || $('#gl-platform', view)) return;
+    let d;
+    try { d = await api('/nuvolve/app/api/platform/companies'); } catch { return; }
+    if (!d.golive) return;
+    const gl = d.golive;
+    const n = d.companies.length || 1;
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.id = 'gl-platform';
+    card.innerHTML = `<h2>Getting to a first route</h2>
+      <p class="small">Median time from sign-up to a tech's first finished day: <b>${gl.medianHoursToFirstRoute == null ? 'nobody yet' : esc(fmtHours(gl.medianHoursToFirstRoute))}</b>.
+        ${gl.withinADay} of ${d.companies.length} got there within a day. Sample data and practice stops don't count.</p>
+      <div class="table-wrap"><table class="list"><thead><tr><th>Step</th><th class="right">Companies</th><th class="right">Share</th></tr></thead><tbody>
+        ${gl.milestones.map(([k, label]) => `<tr><td>${esc(label)}</td><td class="right">${Number(gl.reached[k] || 0)}</td><td class="right">${Math.round(((gl.reached[k] || 0) / n) * 100)}%</td></tr>`).join('')}
+      </tbody></table></div>
+      ${gl.stuck.length ? `<h3>Signed up over 3 days ago, no route yet</h3><ul class="small">${gl.stuck.map((c) => `<li><b>${esc(c.name)}</b>: ${Number(c.done)} of ${Number(c.total)} checklist steps</li>`).join('')}</ul>` : ''}`;
+    $('.stats', view).insertAdjacentElement('afterend', card);
+  }, 0);
+});
+
+})(); } catch (e) { console.error('feature golive.js failed to load', e); }
+
+/* ---- features/growth.js ---- */
+try { (function () {
+// Growth: the platform admins' page for launch numbers (activation, time to first route, week-4 retention,
+// route-day completion), the waitlist, and owner-to-owner referrals. Plus each company's own "Refer a shop" tab.
+(() => {
+  const n = (v, unit = '') => (v == null ? '—' : `${v}${unit}`);
+  const dur = (h) => (h == null ? '—' : h < 48 ? `${Math.round(h)} h` : `${Math.round(h / 24)} days`);
+  const cents = (c) => money((c || 0) / 100);
+  const day = (t) => (t ? esc(fmtDate(String(t).slice(0, 10))) : '');
+
+  async function page(view) {
+    view.innerHTML = '<div class="card"><p class="muted">Loading...</p></div>';
+    const [m, wl, refs] = await Promise.all([api('/nuvolve/app/api/platform/metrics'), api('/nuvolve/app/api/platform/waitlist'), api('/nuvolve/app/api/platform/partner-referrals')]);
+    const t = m.totals;
+    const stat = (label, value, sub) => `<div class="stat"><div class="label">${label}</div><div class="value">${value}</div><div class="sub">${sub}</div></div>`;
+    view.innerHTML = `
+      <div class="page-head"><h1>Growth</h1><div class="actions"><button class="btn" id="gr-refresh">Recount now</button><a class="btn" href="/nuvolve/app/api/platform/metrics?format=csv">⬇️ Metrics CSV</a></div></div>
+      <div class="stats">
+        ${stat('Activation', n(t.activationRate, '%'), `${t.activationEligible} companies past day ${14} or activated`)}
+        ${stat('Time to first route', dur(t.medianHoursToFirstRoute), `median, ${t.firstRouteReached} companies got there`)}
+        ${stat('Week-4 retention', n(t.week4Retention, '%'), `${t.week4Eligible} companies 28+ days old`)}
+        ${stat('Route-day completion', n(t.stopCompletion, '%'), `of stops due, 30 days · ${n(t.routeDaysComplete, '%')} of ${t.routeDays} tech-days fully done`)}
+      </div>
+      <details class="card"><summary><b>How each number is counted</b></summary><ul class="small">${Object.values(m.definitions).map((d) => `<li>${esc(d)}</li>`).join('')}</ul></details>
+      <div class="card"><h2>By sign-up month</h2><div class="table-wrap"><table class="list"><thead><tr><th>Month</th><th>Sign-ups</th><th>Activated</th><th>Week-4</th><th>Time to first route</th></tr></thead><tbody>
+        ${m.cohorts.map((c) => `<tr><td>${esc(c.month)}</td><td>${c.signups}</td><td>${n(c.activationRate, '%')}</td><td>${c.week4Eligible ? n(c.week4Retention, '%') : '—'}</td><td>${dur(c.medianHoursToFirstRoute)}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">No companies yet</td></tr>'}
+      </tbody></table></div></div>
+      <div class="card"><h2>Companies</h2><div class="table-wrap"><table class="list"><thead><tr><th>Company</th><th>Signed up</th><th>Customers</th><th>First route</th><th>Activated</th><th>Week 4</th><th>Stops done (30 d)</th></tr></thead><tbody>
+        ${m.companies.map((r) => `<tr><td><b>${esc(r.name)}</b> <span class="pill">${esc(r.status)}</span></td><td>${day(r.signed_up_at)}</td><td>${r.customers ?? ''}</td>
+          <td>${dur(r.hours_to_first_route)}</td><td>${r.activated_at ? '✓' : ''}</td><td>${r.active_week4 == null ? '' : r.active_week4 ? '✓' : '✗'}</td><td>${n(r.stop_completion, '%')}</td></tr>`).join('')}
+      </tbody></table></div></div>
+      <div class="card"><div class="card-head"><h2>Waitlist and call requests (${wl.rows.length})</h2><a class="btn sm" href="/nuvolve/app/api/platform/waitlist?format=csv">⬇️ CSV</a></div>
+        <p class="small muted">Sign-up is ${wl.mode === 'waitlist' ? '<b>invite-only</b> (SIGNUP_MODE=waitlist): send an invite to open an account' : '<b>open</b>: anyone can start a trial'}.</p>
+        <div class="table-wrap"><table class="list"><thead><tr><th>When</th><th>Who</th><th>Wants</th><th>Trucks</th><th>Uses now</th><th></th></tr></thead><tbody>
+        ${wl.rows.map((r) => `<tr><td class="small">${day(r.created_at)}</td><td><b>${esc(r.company || r.name || '')}</b><div class="small">${esc(r.email)}${r.phone ? ` · ${esc(r.phone)}` : ''}</div>${r.message ? `<div class="small muted">${esc(r.message)}</div>` : ''}</td>
+          <td>${r.intent === 'call' ? '<span class="pill yellow">Call</span>' : esc(r.intent)}${r.ref ? '<div class="small muted">referred</div>' : ''}</td><td>${r.trucks ?? ''}</td><td>${esc(r.current_crm || '')}</td>
+          <td class="nowrap">${r.signed_up_company ? '<span class="pill green">Signed up</span>' : `<button class="btn sm" data-invite="${r.id}">${r.invited_at ? 'Invite again' : 'Send invite'}</button>`}</td></tr>`).join('') || '<tr><td colspan="6" class="muted">Nobody yet</td></tr>'}
+      </tbody></table></div></div>
+      <div class="card"><h2>Shop-to-shop referrals</h2><div class="table-wrap"><table class="list"><thead><tr><th>Referred by</th><th>New shop</th><th>Status</th><th>Reward</th><th></th></tr></thead><tbody>
+        ${refs.map((r) => `<tr><td>${esc(r.referrer_name)}</td><td>${esc(r.referred_name || r.referred_email || '')}</td><td>${esc(r.status)}</td>
+          <td>${r.reward_cents ? cents(r.reward_cents) : ''} ${r.reward_status !== 'none' ? `<span class="pill ${r.reward_status === 'applied' ? 'green' : r.reward_status === 'failed' ? 'red' : 'yellow'}">${esc(r.reward_status)}</span>` : ''}${r.reward_note ? `<div class="small muted">${esc(r.reward_note)}</div>` : ''}</td>
+          <td>${['pending', 'failed'].includes(r.reward_status) ? `<button class="btn sm" data-applied="${r.id}">Mark applied</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">No referrals yet</td></tr>'}
+      </tbody></table></div></div>`;
+    $('#gr-refresh', view).onclick = async () => { await api('/nuvolve/app/api/platform/metrics?refresh=1'); page(view); };
+    $$('[data-invite]', view).forEach((b) => { b.onclick = async () => {
+      try { const r = await api(`/nuvolve/app/api/platform/waitlist/${b.dataset.invite}/invite`, { method: 'POST', body: {} }); toast(r.email === 'sent' ? 'Invite sent' : `Invite link: ${r.link}`); page(view); } catch (e) { toast(e.message, true); }
+    }; });
+    $$('[data-applied]', view).forEach((b) => { b.onclick = async () => { await api(`/nuvolve/app/api/platform/partner-referrals/${b.dataset.applied}/applied`, { method: 'POST', body: {} }); page(view); }; });
+  }
+  NV.page('growth', page);
+  NV.nav({ href: '#/growth', icon: '📊', label: 'Growth', role: 'platform', after: '#/platform' });
+
+  // Each company: its link to send another pest company, and what it has earned.
+  NV.settingsTab({ key: 'refer', label: 'Refer a shop', render: async (box) => {
+    const d = await api('/nuvolve/app/api/partner-referrals');
+    box.innerHTML = `<div class="card" style="max-width:760px">
+      <h2>Refer another pest company</h2>
+      <p>Know an owner who'd like this? Send them your link. When their shop starts paying, you get a month of Nuvolve free${d.cap ? ` (up to ${cents(d.cap)})` : ''}, taken off your next bill.</p>
+      <div class="row" style="align-items:flex-end"><div class="field" style="flex:1"><label>Your link</label><input readonly value="${esc(d.link)}" id="rf-link"></div>
+        <button class="btn" id="rf-copy" type="button">Copy</button></div>
+      <div class="stats" style="margin-top:12px">
+        <div class="stat"><div class="label">On the waitlist</div><div class="value">${d.counts.leads}</div></div>
+        <div class="stat"><div class="label">Trying it</div><div class="value">${d.counts.signedUp}</div></div>
+        <div class="stat"><div class="label">Paying</div><div class="value">${d.counts.paying}</div></div>
+        <div class="stat"><div class="label">Credit earned</div><div class="value">${cents(d.earnedCents)}</div>${d.owedCents ? `<div class="sub">${cents(d.owedCents)} on its way</div>` : ''}</div>
+      </div>
+      ${d.referrals.length ? `<ul class="small">${d.referrals.map((r) => `<li>${esc(r.name)}: ${esc({ lead: 'on the waitlist', signed_up: 'trying Nuvolve', qualified: 'paying', void: 'closed' }[r.status] || r.status)}</li>`).join('')}</ul>` : ''}
+    </div>`;
+    $('#rf-copy', box).onclick = () => { navigator.clipboard?.writeText(d.link); toast('Copied'); };
+  } });
+})();
+
+})(); } catch (e) { console.error('feature growth.js failed to load', e); }
+
+/* ---- features/lang-company.js ---- */
+try { (function () {
+// The company's own words in Spanish (src/features/lang-company.js). Two jobs here:
+//  - the tech app and the office get the company's pairs with their start-up data, so NV.t('Quarterly Home Shield')
+//    gives the owner's Spanish to a tech who uses Spanish (the portal and booking form load theirs in selfserve-lang.js);
+//  - NV.spanishField() draws the "Spanish version (optional)" box that sits under an English box in Settings and
+//    Marketing, with a "Translate for me" button when the server has an AI key (BOOT.autoTranslate).
+NV.on('boot', ({ boot }) => NV.useCompanyStrings(boot?.companyStrings));
+
+// name: the Spanish input's name ("description_es"); from: the English input's name, for the translate button.
+// opts: { value, rows (a textarea when set), placeholder, what (what the text is, for the translator), maxlength }
+NV.spanishField = (name, from, opts = {}) => {
+  const auto = typeof BOOT !== 'undefined' && BOOT && BOOT.autoTranslate;
+  const attrs = `name="${esc(name)}" lang="es" ${opts.maxlength ? `maxlength="${Number(opts.maxlength)}"` : ''} placeholder="${esc(opts.placeholder || 'Leave blank to show the English')}"`;
+  return `<div class="field nv-es"><label>${esc(opts.label || 'Spanish version (optional)')}</label>
+    ${opts.rows ? `<textarea ${attrs} rows="${Number(opts.rows)}">${esc(opts.value || '')}</textarea>` : `<input ${attrs} value="${esc(opts.value || '')}">`}
+    <div class="hint">Customers and techs who use Spanish see this instead. Blank: they see the English.
+      ${auto ? `<button type="button" class="btn sm" data-nv-translate="${esc(from)}" data-nv-to="${esc(name)}" data-nv-what="${esc(opts.what || '')}">Translate for me</button>` : ''}</div></div>`;
+};
+
+// "Translate for me": fills the Spanish box from the English one next to it. The owner reads it before saving.
+document.addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-nv-translate]');
+  if (!b) return;
+  e.preventDefault();
+  const scope = b.closest('form, .modal, .card') || document;
+  const src = scope.querySelector(`[name="${b.dataset.nvTranslate}"]`);
+  const dst = scope.querySelector(`[name="${b.dataset.nvTo}"]`);
+  if (!src || !dst) return;
+  if (!src.value.trim()) return toast('Type the English first', true);
+  if (dst.value.trim() && !confirm('Replace the Spanish that is there now?')) return;
+  b.disabled = true;
+  const label = b.textContent;
+  b.textContent = 'Translating...';
+  try {
+    const r = await api('/nuvolve/app/api/lang/translate', { body: { text: src.value, what: b.dataset.nvWhat } });
+    dst.value = r.text;
+    toast('Translated. Read it over, then save.');
+  } catch (err) { toast(err.message, true); } finally { b.disabled = false; b.textContent = label; }
+});
+
+})(); } catch (e) { console.error('feature lang-company.js failed to load', e); }
+
+/* ---- features/leadsources.js ---- */
+try { (function () {
+// Settings > Lead sources: the webhook link for each lead marketplace and call tracker, their keys, a test lead
+// button, and the last 50 leads that came in with what became of each.
+(() => {
+  const STATUS = { created: ['New lead', 'green'], matched: ['Existing customer', ''], duplicate: ['Sent again', ''], ignored: ['Skipped', ''], failed: ['Needs a look', 'red'] };
+  const copyBtn = (text) => `<button type="button" class="btn sm" data-copy="${esc(text)}">Copy</button>`;
+
+  const render = async (box) => {
+    box.innerHTML = '<div class="card"><p class="muted">Loading...</p></div>';
+    let d;
+    try { d = await api('/nuvolve/app/api/leadsources'); } catch (e) { box.innerHTML = `<div class="card"><p>${esc(e.message)}</p></div>`; return; }
+    if (!d.token) { d = await api('/nuvolve/app/api/leadsources', { method: 'POST', body: {} }); d.inbox = []; }
+    const pill = (st) => `<span class="pill ${STATUS[st]?.[1] || ''}">${esc(STATUS[st]?.[0] || st)}</span>`;
+    box.innerHTML = `
+      <div class="card" style="max-width:900px">
+        <h2>Lead sources</h2>
+        <p>Leads from Angi, HomeAdvisor, Thumbtack and Google, and calls from CallRail, come straight in as leads with the source filled in, so <a href="#/marketing">Marketing</a> shows what each one costs and earns. The office gets a notification within seconds: the first company to call back usually wins the job.</p>
+        <div class="table-wrap"><table class="list"><thead><tr><th>Source</th><th>Paste this link into the source</th><th>30 days</th><th></th></tr></thead><tbody>
+          ${d.providers.map((p) => `<tr>
+            <td><label class="check"><input type="checkbox" data-on="${p.key}" ${p.on ? 'checked' : ''}> <b>${esc(p.label)}</b></label><div class="small muted">${esc(p.help)}</div></td>
+            <td class="small mono" style="word-break:break-all">${esc(p.url || '')}</td>
+            <td>${p.received}${p.last ? `<div class="small muted">last ${esc(fmtDate(p.last.slice(0, 10)))}</div>` : ''}</td>
+            <td class="nowrap">${p.url ? copyBtn(p.url) : ''} <button type="button" class="btn sm" data-test="${p.key}">Send a test lead</button></td></tr>`).join('')}
+        </tbody></table></div>
+        <p class="small" style="margin-top:10px"><b>Google Business Profile:</b> ${d.gbpLink ? `use this as your profile's booking link, so those bookings are marked as coming from your profile: <span class="mono">${esc(d.gbpLink)}</span> ${copyBtn(d.gbpLink)}` : 'turn on online booking (Settings > Company) to get a booking link for your profile.'}</p>
+        <button type="button" class="btn sm" id="ls-new-token">Make new links (the old ones stop working)</button>
+      </div>
+      <form class="card" id="ls-keys" style="max-width:900px">
+        <h2>Keys</h2>
+        <p class="small muted">Optional checks on top of the private link. Leave a box empty to keep what's saved.</p>
+        <div class="row">
+          <div class="field"><label>CallRail signing key ${d.callrailKey ? '<span class="pill green">saved</span>' : ''}</label><input name="callrail_key" type="password" autocomplete="off" placeholder="Settings > Integrations > Webhooks"></div>
+          <div class="field"><label>Google lead form key ${d.googleKey ? '<span class="pill green">saved</span>' : ''}</label><input name="google_key" type="password" autocomplete="off" placeholder="Any long random text; paste the same into Google"></div>
+        </div>
+        <div class="row">
+          <div class="field"><label>Thumbtack webhook user name</label><input name="thumbtack_user" value="${esc(d.thumbtackUser)}" autocomplete="off"></div>
+          <div class="field"><label>Thumbtack webhook password ${d.thumbtackPassword ? '<span class="pill green">saved</span>' : ''}</label><input name="thumbtack_password" type="password" autocomplete="new-password"></div>
+        </div>
+        <button class="btn primary">Save keys</button>
+      </form>
+      <div class="card" style="max-width:900px">
+        <h2>Recent leads</h2>
+        ${d.inbox.length ? `<div class="table-wrap"><table class="list"><thead><tr><th>When</th><th>Source</th><th>Who</th><th>What</th><th></th></tr></thead><tbody>
+          ${d.inbox.map((r) => `<tr><td class="small nowrap">${esc(fmtDate(r.received_at.slice(0, 10)))}</td><td>${esc(d.providers.find((p) => p.key === r.provider)?.label || r.provider)}</td>
+            <td>${r.customer_id ? `<a href="#/customers/${r.customer_id}">${esc(r.customer_name || r.name || 'Customer')}</a>` : esc(r.name || r.phone || '')}</td>
+            <td class="small">${esc(r.summary || '')}${r.note ? `<div class="muted">${esc(r.note)}</div>` : ''}</td><td>${pill(r.status)}</td></tr>`).join('')}
+        </tbody></table></div>` : '<p class="muted">No leads yet. Paste a link above into a source, or send a test lead.</p>'}
+      </div>`;
+
+    const rerender = () => box.isConnected && render(box);
+    $$('[data-copy]', box).forEach((b) => { b.onclick = () => { navigator.clipboard?.writeText(b.dataset.copy); toast('Copied'); }; });
+    $$('[data-on]', box).forEach((cb) => { cb.onchange = async () => { await api('/nuvolve/app/api/leadsources', { method: 'POST', body: { [`${cb.dataset.on}_on`]: cb.checked } }); toast('Saved'); }; });
+    $$('[data-test]', box).forEach((b) => { b.onclick = async () => {
+      b.disabled = true;
+      try {
+        const r = await api(`/nuvolve/app/api/leadsources/test/${b.dataset.test}`, { method: 'POST', body: {} });
+        toast(r.ok ? `Test lead saved as ${r.lead.name || r.lead.phone} (source: ${r.lead.source})` : `Test lead: ${r.row.note || r.row.status}`, !r.ok);
+        rerender();
+      } catch (e) { toast(e.message, true); } finally { b.disabled = false; }
+    }; });
+    $('#ls-new-token', box).onclick = async () => {
+      if (!confirm('Make new links? Every source must be given its new link, or its leads stop arriving.')) return;
+      await api('/nuvolve/app/api/leadsources', { method: 'POST', body: { new_token: true } });
+      toast('New links made'); rerender();
+    };
+    $('#ls-keys', box).onsubmit = async (e) => {
+      e.preventDefault();
+      const body = Object.fromEntries(Object.entries(formData(e.target)).filter(([k, v]) => v !== '' || k === 'thumbtack_user'));
+      await api('/nuvolve/app/api/leadsources', { method: 'POST', body });
+      toast('Keys saved'); rerender();
+    };
+  };
+  NV.settingsTab({ key: 'leadsources', label: 'Lead sources', render });
+})();
+
+})(); } catch (e) { console.error('feature leadsources.js failed to load', e); }
+
+/* ---- features/mobile-devices.js ---- */
+try { (function () {
+// Staff phones: registers this phone (and its push token in the store app), asks the server on every start and
+// every 15 minutes whether to wipe, and wipes Nuvolve's own data when told to. Plus Settings > Phones for managers.
+(() => {
+  const KEY = 'nv_device_key', ID = 'nv_device_id';
+  const store = { get: (k) => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch { /* private mode */ } } };
+  const native = window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform();
+  const platform = native ? window.Capacitor.getPlatform() : 'web';
+  const staffPage = /^\/(tech|sell)?(\/|$)/.test(location.pathname) && !/^\/(portal|book|sign|offer|track|review|r|pub)\b/.test(location.pathname);
+  if (!staffPage) return;
+
+  // Everything Nuvolve keeps on this phone: storage, the offline outbox (IndexedDB), cached pages, the worker.
+  async function wipeLocal() {
+    try { localStorage.clear(); sessionStorage.clear(); } catch { /* nothing to clear */ }
+    try { for (const d of (await indexedDB.databases?.()) || [{ name: 'nuvolve-tech' }]) if (d.name) indexedDB.deleteDatabase(d.name); } catch { /* not supported */ }
+    try { for (const k of await caches.keys()) await caches.delete(k); } catch { /* no caches */ }
+    try { for (const r of await navigator.serviceWorker.getRegistrations()) await r.unregister(); } catch { /* no worker */ }
+    document.cookie = 'sid=; Max-Age=0; Path=/';
+  }
+  async function checkin() {
+    const key = store.get(KEY);
+    if (!key) return;
+    try {
+      const r = await fetch(`/nuvolve/app/api/pub/${encodeURIComponent(key)}/checkin`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+      if (!r.ok) return;
+      if ((await r.json()).wipe) {
+        await wipeLocal();
+        await fetch(`/nuvolve/app/api/pub/${encodeURIComponent(key)}/wiped`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).catch(() => {});
+        document.body.innerHTML = '<div style="font:16px system-ui;padding:40px;text-align:center"><h2>Signed out</h2><p>Your office signed this phone out of Nuvolve and cleared its Nuvolve data.</p><p><a href="/nuvolve/app/tech">Log in again</a></p></div>';
+      }
+    } catch { /* offline: ask again later */ }
+  }
+  async function pushToken() {
+    const P = native && window.Capacitor.Plugins && window.Capacitor.Plugins.PushNotifications;
+    if (!P) return null;
+    try {
+      const perm = await P.requestPermissions();
+      if (perm.receive !== 'granted') return null;
+      return await new Promise((resolve) => {
+        P.addListener('registration', (t) => resolve(t.value));
+        P.addListener('registrationError', () => resolve(null));
+        P.register();
+        setTimeout(() => resolve(null), 10000);
+      });
+    } catch { return null; }
+  }
+  async function registerPhone() {
+    let id = store.get(ID);
+    if (!id) { id = (crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2) + Date.now()).replace(/[^A-Za-z0-9_-]/g, ''); store.set(ID, id); }
+    const token = await pushToken();
+    try {
+      const r = await fetch('/nuvolve/app/api/mobile/devices', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ device_id: id, key: store.get(KEY) || undefined, platform, model: (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || '',
+          app_version: (window.Capacitor && window.Capacitor.appVersion) || '', push_kind: token ? 'fcm' : undefined, push_token: token || undefined }) });
+      if (r.ok) { const d = await r.json(); if (d.key) store.set(KEY, d.key); }
+    } catch { /* offline */ }
+  }
+  checkin().then(() => setTimeout(registerPhone, 1500));
+  setInterval(checkin, 15 * 60 * 1000);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') checkin(); });
+
+  // Settings > Phones (managers and up).
+  if (!window.NV || !NV.settingsTab) return;
+  NV.settingsTab({ key: 'phones', label: 'Phones', render: async function render(box) {
+    const list = await api('/nuvolve/app/api/mobile/devices');
+    const when = (t) => (t ? esc(fmtDate(t.slice(0, 10))) : '');
+    box.innerHTML = `<div class="card" style="max-width:900px">
+      <h2>Phones and tablets</h2>
+      <p class="small">Every phone your team has used Nuvolve on. <b>Wipe</b> signs the phone out right away and clears Nuvolve's data from it the next time it's online: saved logins, the offline outbox, photos waiting to upload. It never touches anything else, so it's safe on a tech's own phone. Turning a person off in Team wipes all of their phones.</p>
+      <div class="table-wrap"><table class="list"><thead><tr><th>Person</th><th>Phone</th><th>Own phone</th><th>Last used</th><th></th></tr></thead><tbody>
+      ${list.map((d) => `<tr><td><b>${esc(d.user_name)}</b><div class="small muted">${esc(d.role)}</div></td>
+        <td>${esc(d.platform === 'web' ? 'Browser' : d.platform === 'ios' ? 'iPhone app' : 'Android app')}<div class="small muted">${esc(d.model || '')}${d.has_push ? ' · push on' : ''}</div></td>
+        <td><input type="checkbox" data-personal="${d.id}" ${d.personal ? 'checked' : ''} aria-label="Personal phone"></td>
+        <td class="small">${when(d.last_seen_at)}</td>
+        <td>${d.wiped_at ? `<span class="pill green">Wiped ${when(d.wiped_at)}</span>` : d.wipe_requested_at ? '<span class="pill yellow">Wipe waiting for the phone</span>' : `<button class="btn sm" data-wipe="${d.id}">Sign out and wipe</button>`}</td></tr>`).join('')
+        || '<tr><td colspan="5" class="muted">No phones yet. They show up once someone logs in on the tech or sales app.</td></tr>'}
+      </tbody></table></div></div>`;
+    $$('[data-wipe]', box).forEach((b) => { b.onclick = async () => {
+      if (!confirm('Sign this phone out of Nuvolve now and clear its Nuvolve data? Anything it saved offline and has not sent yet is lost.')) return;
+      await api(`/nuvolve/app/api/mobile/devices/${b.dataset.wipe}/wipe`, { method: 'POST', body: {} }); toast('Signed out. The data clears when the phone is next online.'); render(box);
+    }; });
+    $$('[data-personal]', box).forEach((cb) => { cb.onchange = () => api(`/nuvolve/app/api/mobile/devices/${cb.dataset.personal}`, { method: 'POST', body: { personal: cb.checked } }); });
+  } });
+})();
+
+})(); } catch (e) { console.error('feature mobile-devices.js failed to load', e); }
 
 /* ---- features/profit.js ---- */
 try { (function () {
@@ -2197,6 +3851,13 @@ document.head.insertAdjacentHTML('beforeend', `<style>
   .pf-card .pf-row:last-child { border-bottom: 0; }
   .pf-portal { margin-top: 6px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
   .pf-sig-img { max-height: 46px; max-width: 170px; background: #fff; border: 1px solid var(--line); border-radius: 6px; padding: 2px 4px; }
+  .pf-done { margin: 4px 0 12px; }
+  .pf-done-photos { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; }
+  .pf-done-photos figure { margin: 0; }
+  .pf-done-photos img { width: 100%; aspect-ratio: 4/3; object-fit: cover; border-radius: 8px; display: block; background: var(--line); }
+  .pf-done-photos figcaption { font-size: 12px; line-height: 1.35; margin-top: 4px; }
+  .pf-done-sig { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; background: #fff; }
+  .pf-done-sig img { display: block; max-width: 100%; height: 56px; object-fit: contain; object-position: left; border-bottom: 1px solid var(--line); margin-bottom: 6px; }
   .pf-rules td { vertical-align: middle; }
   .pf-rules input[type=number] { width: 76px; }
   .pf-rules select { min-width: 210px; }
@@ -2234,6 +3895,32 @@ function pfWatch(on) {
 }
 const pfHere = () => (pfFix.last && Date.now() - pfFix.last.at < 5 * 60000 ? { lat: pfFix.last.lat, lng: pfFix.last.lng, accuracy: pfFix.last.accuracy } : null);
 NV.on('tech.stop.rendered', ({ v }) => pfWatch(v.status === 'scheduled'));
+
+// A finished stop on the tech's phone: the photos and the signature that went with it, stamped, so the tech can
+// show the customer (or the office) what was done without opening the report.
+NV.on('tech.stop.rendered', ({ v, root }) => {
+  if (!PF_TECH || v.status !== 'completed') return;
+  const card = [...$$('.wrap > .card', root)].pop();
+  if (!card) return;
+  const order = { before: 0, after: 1, issue: 2 };
+  const shots = (v.photos || []).filter((p) => PF_KINDS.includes(p.kind)).sort((a, b) => order[a.kind] - order[b.kind]);
+  const pr = v.proof || {};
+  const signed = pr.signed && typeof v.signature === 'string' && v.signature.startsWith('data:image/');
+  if (!shots.length && !signed && !pr.no_sign_reason) return;
+  const label = { before: NV.t('Before'), after: NV.t('After'), issue: NV.t('Problem found') };
+  const src = (p) => p.local || `/nuvolve/app/api/photos/${encodeURIComponent(p.id)}`;
+  const html = `<div class="pf-done">
+    ${shots.length ? `<div class="pf-done-photos">${shots.map((p) => `<figure><img src="${esc(src(p))}" alt="${esc(label[p.kind])}" loading="lazy">
+      <figcaption><b>${esc(label[p.kind])}</b>${p.taken_at ? ` · ${esc(pfTime(p.taken_at, { date: false }))}` : ''}${p.caption ? `<br>${esc(p.caption)}` : ''}</figcaption></figure>`).join('')}</div>` : ''}
+    ${signed ? `<div class="pf-done-sig"><img src="${esc(v.signature)}" alt="${esc(NV.t('Customer signature'))}">
+      <div class="small">${esc(pr.signer_name ? NV.t('Signed by {name}', { name: pr.signer_name }) : NV.t('Signed'))}${pr.signed_at ? ` · ${esc(pfTime(pr.signed_at, { date: false }))}` : ''}</div>
+      ${pr.sign_distance_m != null && pr.sign_distance_m <= Math.max(150, pr.sign_accuracy || 0) ? `<div class="small muted">📍 ${esc(NV.t('At the service address'))}</div>` : ''}</div>`
+    : pr.no_sign_reason ? `<div class="pf-done-sig small muted">${esc(NV.t('Not signed'))}: ${esc(NV.t(pr.no_sign_reason))}${pr.no_sign_note ? `. ${esc(pr.no_sign_note)}` : ''}</div>` : ''}
+  </div>`;
+  const report = card.querySelector('a[href$="/report"]');
+  if (report) report.insertAdjacentHTML('beforebegin', html);
+  else card.insertAdjacentHTML('beforeend', html);
+});
 window.addEventListener('hashchange', () => { if (!/^#\/stop\//.test(location.hash)) pfWatch(false); });
 
 // Every photo goes up with when it was taken, and where when it was taken just now.
@@ -3600,7 +5287,8 @@ NV.page('welcome', async (view) => {
           await move(cur, cur, { finished: true });
           toast("You're set up. Welcome to Nuvolve!");
           if (typeof refreshBoot === 'function') await refreshBoot();
-          location.hash = '#/';
+          // Next: the go-live checklist (features/golive.js), with the practice stop at the top.
+          location.hash = NV.pageFor('golive') ? '#/golive' : '#/';
           return;
         }
         await move(STEPS[i + 1][0], cur);
@@ -3734,11 +5422,14 @@ const RENDER = {
         <label class="check"><input type="checkbox" id="ob-sms" ${c.texting.on ? 'checked' : ''}> Text customers too (reminders, on-my-way, receipts)</label>
         ${c.texting.live ? '' : '<p class="small muted">Texts wait in the Outbox until the server has a texting number.</p>'}</div>
       <div class="ob-choice" style="margin-top:10px"><div class="card-head"><h3 style="margin:0">Card payments</h3>${c.payments.mode === 'live' ? status(true, 'Live') : c.payments.mode === 'test' ? '<span class="pill blue">Test mode</span>' : status(false)}</div>
+        <div id="ob-stripe-guide">
         <div class="field"><label>Your Stripe secret key</label><input id="ob-stripe" autocomplete="off" spellcheck="false" placeholder="${s.stripe_key_set ? 'Saved. Paste a new one to replace it' : 'sk_live_...'}">
-          <div class="hint">From your Stripe dashboard → Developers → API keys. It's kept on the server and never shown again.</div></div></div>
+          <div class="hint">From your Stripe dashboard → Developers → API keys. It's kept on the server and never shown again.</div></div></div></div>
       <div class="ob-choice" style="margin-top:10px"><h3 style="margin:0 0 6px">Google reviews</h3>
         <div class="field"><label>Your Google review link</label><input id="ob-review" value="${esc(s.google_review_url || '')}" placeholder="https://g.page/r/.../review">
           <div class="hint">Customers who rate a visit 5 stars are asked to leave a review here.</div></div></div>`;
+    // The guided Stripe step (features/golive.js) checks the key with Stripe and saves it itself.
+    if (window.NVGolive) window.NVGolive.stripeGuide($('#ob-stripe-guide', box), { compact: true, keySet: Boolean(s.stripe_key_set) });
     $('#ob-test-email', box).onclick = async (e) => {
       e.target.disabled = true;
       try { const r = await api('/nuvolve/app/api/connections/test-email', { body: {} }); toast(r.status === 'sent' ? `Sent to ${r.to}` : `Saved in the Outbox (demo mode), to ${r.to}`); } catch (err) { toast(err.message, true); }
@@ -3746,7 +5437,7 @@ const RENDER = {
     };
     return async () => {
       const body = { sms_enabled: $('#ob-sms', box).checked ? '1' : '0' };
-      const key = $('#ob-stripe', box).value.trim();
+      const key = ($('#ob-stripe', box)?.value || '').trim();
       if (key) body.stripe_secret_key = key;
       const review = $('#ob-review', box).value.trim();
       if (review && !/^https:\/\//.test(review)) throw new Error('The review link should start with https://');
@@ -4308,13 +5999,13 @@ try { (function () {
   });
 
   const one = (text, el) => {
-    if (NV.strings[text]) return NV.strings[text];
+    if (NV.str(text)) return NV.str(text);
     for (const tp of TEMPLATES) {
       if (tp.where && !(el && el.closest(tp.where))) continue;
       const m = text.match(tp.re);
       if (!m) continue;
       const vars = {};
-      tp.names.forEach((n, i) => { vars[n] = NV.strings[m[i + 1]] || m[i + 1]; });
+      tp.names.forEach((n, i) => { vars[n] = NV.str(m[i + 1]) || m[i + 1]; });
       if (!NV.strings[tp.key]) return null;
       return NV.t(tp.key, vars);
     }
@@ -4388,12 +6079,13 @@ try { (function () {
 
   if (page === 'portal') {
     NV.slot('portal.cards', () => switcher());
-    NV.on('portal.rendered', ({ root }) => { document.title = NV.lang === 'es' ? NV.t('Your account') : document.title; pass(root); });
+    // The company's own Spanish (service names, the portal message: Settings) comes with the portal's data.
+    NV.on('portal.rendered', ({ root, data }) => { NV.useCompanyStrings(data?.companyStrings); document.title = NV.lang === 'es' ? NV.t('Your account') : document.title; pass(root); });
   } else {
     // A Spanish phone gets the booking form in Spanish (or whatever they picked here before).
     const want = String(NV.preferredLang(navigator.language) || '').toLowerCase();
     if (want.startsWith('es')) NV.useLang('es').then(() => { pass(document.body); retitle(); });
-    NV.on('book.rendered', ({ form }) => { form.insertAdjacentHTML('beforebegin', switcher()); retitle(); pass(document.getElementById('app')); });
+    NV.on('book.rendered', ({ form, d }) => { NV.useCompanyStrings(d?.companyStrings); form.insertAdjacentHTML('beforebegin', switcher()); retitle(); pass(document.getElementById('app')); });
   }
 })();
 
@@ -4970,6 +6662,14 @@ NV.slot('book.form', ({ d }) => {
   // The page's language: the phone's, or what they picked with the English / Español link (selfserve-lang.js).
   return consentBox(FORMS, NV.lang === 'es' ? 'es' : 'en');
 });
+// Offer texts start only after they answer YES from the phone (double opt-in), so the thank-you page says so.
+NV.on('book.done', ({ result, root }) => {
+  if (!result || !result.offersConfirm || !root) return;
+  const p = document.createElement('p');
+  p.className = 'small muted';
+  p.textContent = NV.t('For our offers by text, reply YES to the text we just sent you.');
+  (root.firstElementChild || root).appendChild(p);
+});
 
 // ---------- Settings > Texting compliance ----------
 NV.settingsTab({ key: 'texting', label: 'Texting compliance', render: async (box, d) => {
@@ -5083,6 +6783,7 @@ NV.settingsTab({ key: 'texting', label: 'Texting compliance', render: async (box
       <div class="field"><label>Campaign id</label><input name="campaign_id" placeholder="CABC123" value="${esc(r.campaign_id || '')}"></div></div>
       <div class="field"><label>Messaging service id</label><input name="messaging_service_sid" placeholder="MG..." value="${esc(r.messaging_service_sid || '')}"><div class="hint">This branch's texts go through it. Or leave it empty and enter the number below.</div></div>
       <div class="field"><label>Sending number</label><input name="from_number" type="tel" placeholder="(214) 555-0100" value="${esc(r.from_number || '')}"></div>
+      ${reg.live ? `<div class="hint">${(reg.assigned || []).length ? `Your host assigned you: ${reg.assigned.filter((a) => !a.location_id || a.location_id === r.location_id).map((a) => esc(a.sender)).join(', ') || 'nothing for this branch'}. Only these can be used.` : 'Your host hasn\'t assigned you a number or messaging service yet. Ask them to, then enter it here.'}</div>` : ''}
       <div class="field"><label>Notes</label><input name="note" maxlength="500" value="${esc(r.note || '')}" placeholder="What the carrier asked us to fix"></div>
       ${r.uses_main ? '<div class="hint">Saving gives this branch its own registration instead of the main branch\'s.</div>' : ''}`,
     [{ label: 'Cancel' }, { label: 'Save', cls: 'primary', onClick: async (m) => {

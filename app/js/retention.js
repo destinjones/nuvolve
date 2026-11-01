@@ -56,7 +56,7 @@ async function pageRetention(view, _id, params) {
         <td>${esc(r.cancel_reason || '—')}${r.skip ? '<div class="small muted">Not contacted for this reason</div>' : ''}</td>
         <td class="right">${money(r.yearly)}/yr</td>
         <td class="small">${r.won ? '<span class="pill green">Came back</span>' : r.lastOffer ? `Step ${r.sentSteps} of ${cfg.winbackDays.length} ${offerPill(r.lastOffer)}` : '<span class="muted">Not sent</span>'}
-          ${!r.won && !r.skip && r.due ? '<div><span class="pill blue">Due now</span></div>' : !r.won && !r.skip && r.nextInDays != null ? `<div class="muted">Next in ${r.nextInDays} days</div>` : ''}</td>
+          ${!r.won && !r.skip && r.due ? '<div><span class="pill blue">Due now</span></div>' : !r.won && !r.skip && r.nextInDays != null ? `<div class="muted">Next in ${plural(r.nextInDays, 'day')}</div>` : ''}</td>
         <td>${r.won ? '' : `<button class="btn sm primary" data-winback="${r.id}">🎁 Send offer</button>`}</td></tr>`).join('')}
       </tbody></table>` : '<div class="empty"><div class="big">👋</div><h3>No one to win back</h3><p>Customers who stop every plan show up here so you can invite them back.</p></div>';
   } else {
