@@ -49,6 +49,17 @@ function ruleBlocked(path, opts, data) {
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const money = (n) => (Number(n) || 0).toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+// A count with its noun, for English-only screens: plural(1, 'stop') is "1 stop", plural(3, 'stop') "3 stops".
+// Translated screens use NV.tn (public/js/nv.js).
+const plural = (n, word, many = `${word}s`) => `${n} ${Number(n) === 1 ? word : many}`;
+// How a payment was made, for the office and tech app, instead of the code stored with it. Customers see plainer
+// words for a few of these (portal.js and src/docs.js say "Bank transfer").
+const PAY_METHOD_LABELS = { card: 'Card', autopay: 'Autopay (card on file)', ach: 'Bank (ACH)', cash: 'Cash', check: 'Check',
+  credit: 'Account credit', returned: 'Returned bank payment', other: 'Other' };
+const payMethodLabel = (m) => {
+  const w = PAY_METHOD_LABELS[m] || (m ? String(m).charAt(0).toUpperCase() + String(m).slice(1) : 'Payment');
+  return window.NV ? NV.t(w) : w;
+};
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 

@@ -13,9 +13,9 @@ const RouteMerge = (() => {
         <div class="rm-crew-head"><span class="dot" style="background:${esc(c.color)}"></span><b>${esc(c.name)}</b>
           ${c.kind === 'seller' ? '<span class="pill blue">Joining</span>' : c.location ? `<span class="small muted">${esc(c.location)}</span>` : ''}</div>
         <div class="rm-crew-num">${c.before} <span class="muted">→</span> <b>${c.after}</b> <span class="small muted">accounts</span></div>
-        <div class="small">+${c.added} accounts · <b>${money(c.added_yearly)}</b>/yr</div>
+        <div class="small">+${plural(c.added, 'account')} · <b>${money(c.added_yearly)}</b>/yr</div>
         ${c.zips.length ? `<div class="small muted">Mostly ${c.zips.map(esc).join(', ')}</div>` : ''}
-        ${c.busiest ? `<div class="small ${c.over_limit ? 'rm-bad' : 'muted'}">Busiest day next 30: ${c.busiest.n} stops (${fmtDate(c.busiest.date, { weekday: 'short', month: 'short', day: 'numeric' })})</div>` : ''}
+        ${c.busiest ? `<div class="small ${c.over_limit ? 'rm-bad' : 'muted'}">Busiest day next 30: ${plural(c.busiest.n, 'stop')} (${fmtDate(c.busiest.date, { weekday: 'short', month: 'short', day: 'numeric' })})</div>` : ''}
       </div>`).join('')}</div>`;
   }
 

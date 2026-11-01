@@ -10,7 +10,7 @@ const renewPill = (k) => {
   if (k.status === 'lapsed') return '<span class="pill red">Lapsed</span>';
   if (k.status === 'cancelled') return '<span class="pill">Cancelled</span>';
   const n = daysUntil(k.renewal_date);
-  return n < 0 ? `<span class="pill red">${-n} days late</span>` : n <= 30 ? `<span class="pill yellow">Due in ${n} days</span>` : '<span class="pill green">Active</span>';
+  return n < 0 ? `<span class="pill red">${plural(-n, 'day')} late</span>` : n <= 30 ? `<span class="pill yellow">Due in ${plural(n, 'day')}</span>` : '<span class="pill green">Active</span>';
 };
 
 // ---------- Termite page ----------
@@ -24,7 +24,7 @@ async function pageTermite(view, _id, params) {
       <a class="stat" href="#/termite?tab=renewals&view=active"><div class="label">Active termite contracts</div><div class="value">${sum.active.n}</div><div class="sub">${money(sum.active.amount)} a year in renewals</div></a>
       <a class="stat ${sum.due30.n ? 'warn' : ''}" href="#/termite?tab=renewals&view=due"><div class="label">Renewing in 30 days</div><div class="value">${sum.due30.n}</div><div class="sub">${money(sum.due30.amount)} to collect</div></a>
       <a class="stat ${sum.overdue.n + sum.lapsed.n ? 'danger' : ''}" href="#/termite?tab=renewals&view=overdue"><div class="label">Past due or lapsed</div><div class="value">${sum.overdue.n + sum.lapsed.n}</div><div class="sub">${money(sum.overdue.amount + sum.lapsed.amount)} at risk</div></a>
-      <a class="stat ${sum.stationActivity ? 'danger' : ''}" href="#/termite?tab=stations"><div class="label">Homes with termite hits</div><div class="value">${sum.stationActivity}</div><div class="sub">${sum.stations.stations} stations at ${sum.stations.properties} homes${sum.stationOverdue ? ` · ${sum.stationOverdue} overdue for a check` : ''}</div></a>
+      <a class="stat ${sum.stationActivity ? 'danger' : ''}" href="#/termite?tab=stations"><div class="label">Homes with termite hits</div><div class="value">${sum.stationActivity}</div><div class="sub">${plural(sum.stations.stations, 'station')} at ${sum.stations.properties} homes${sum.stationOverdue ? ` · ${sum.stationOverdue} overdue for a check` : ''}</div></a>
       <a class="stat" href="#/termite?tab=wdi"><div class="label">WDI reports this month</div><div class="value">${sum.wdiMonth}</div><div class="sub">${sum.wdiDrafts} draft${sum.wdiDrafts === 1 ? '' : 's'} not signed yet</div></a>
     </div>
     <div class="card">
@@ -90,7 +90,7 @@ async function stationsTab(box) {
   box.innerHTML = b.totals.stations ? `
     ${table('🐜 Termites found at the last check', b.activity, (p) => `<b style="color:var(--danger)">#${p.active.map(esc).join(', #')}</b> of ${p.stations}`, 'No termite hits right now.')}
     ${table('Stations damaged, missing or not reached', b.attention, (p) => `#${p.attention.map(esc).join(', #')} of ${p.stations}`, 'None.')}
-    ${table(`Not checked in ${b.overdueDays} days`, b.overdue, (p) => `${p.overdue} of ${p.stations}`, 'Every station is up to date.')}`
+    ${table(`Not checked in ${plural(b.overdueDays, 'day')}`, b.overdue, (p) => `${p.overdue} of ${p.stations}`, 'Every station is up to date.')}`
     : '<p class="muted">No termite stations yet. Techs add them on the ticket (type "Termite station"), or place them on a graph.</p>';
 }
 

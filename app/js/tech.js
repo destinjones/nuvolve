@@ -231,7 +231,7 @@ async function showStats() {
   const p = pay?.show ? pay.line : null;
   const me = lb.rows.find((r) => r.id === ME.id);
   app.innerHTML = `
-    <div class="top"><h1>🏆 ${esc(t('This month'))}</h1><div class="sub">${esc(me ? t("You're #{rank} of {n} with {points} points", { rank: me.rank, n: lb.rows.length, points: me.points }) : t('Leaderboard'))}</div></div>
+    <div class="top"><h1>🏆 ${esc(t('This month'))}</h1><div class="sub">${esc(me ? t(me.points === 1 ? "You're #{rank} of {n} with {points} point" : "You're #{rank} of {n} with {points} points", { rank: me.rank, n: lb.rows.length, points: me.points }) : t('Leaderboard'))}</div></div>
     <div class="wrap">
       ${me ? `<div class="stats" style="grid-template-columns:1fr 1fr">
         <div class="stat"><div class="label">${esc(t('5-star ratings'))}</div><div class="value">${me.five}</div></div>
@@ -241,15 +241,16 @@ async function showStats() {
       </div>${me.badges.length ? `<div class="card">${me.badges.map((b) => `<span class="pill green" style="margin:2px">${esc(b)}</span>`).join('')}</div>` : ''}` : ''}
       ${p ? `<div class="card"><h3>${esc(t('💵 My pay so far'))}</h3><div class="small muted">${esc(t('{from} to {to}', { from: fmtDate(pay.from), to: fmtDate(pay.to) }))}</div>
         <div style="font-size:30px;font-weight:700;margin:6px 0">${money(p.gross)}</div>
-        <div class="small">${[p.pay_type === 'production' && t('{amount} of work on {n} stops', { amount: money(p.production), n: p.stops }),
-          p.pay_type !== 'salary' && (p.ot ? t('{n} hours ({ot} overtime)', { n: p.hours, ot: p.ot }) : t('{n} hours', { n: p.hours })),
+        <div class="small">${[p.pay_type === 'production' && NV.tn(p.stops, '{amount} of work on {n} stop', '{amount} of work on {n} stops', { amount: money(p.production) }),
+          p.pay_type !== 'salary' && (p.ot ? NV.tn(p.hours, '{n} hour ({ot} overtime)', '{n} hours ({ot} overtime)', { ot: p.ot }) : NV.tn(p.hours, '{n} hour', '{n} hours')),
           p.commission && t(p.sales === 1 ? '{amount} commission on {n} sale' : '{amount} commission on {n} sales', { amount: money(p.commission), n: p.sales }),
           p.tips && t('{amount} tips', { amount: money(p.tips) })].filter(Boolean).map(esc).join(' · ')}</div>
         <div class="small muted" style="margin-top:4px">${esc(t('Before taxes. Final pay is set when the office approves payroll.'))}</div></div>` : ''}
       <div class="card flush">
         ${lb.rows.map((r) => `<div class="stop" style="${r.id === ME.id ? 'background:var(--brand-soft)' : ''}">
           <div class="n" style="background:${esc(r.color)}">${r.rank}</div>
-          <div class="info"><b>${esc(r.id === ME.id ? t('{name} (you)', { name: r.name }) : r.name)}</b><div class="small muted">${esc(t('{five} five-stars · {google} Google · {stops} stops', { five: r.five, google: r.google, stops: r.stops }))}</div></div>
+          <div class="info"><b>${esc(r.id === ME.id ? t('{name} (you)', { name: r.name }) : r.name)}</b><div class="small muted">${esc(t(r.five === 1 ? (r.stops === 1 ? '{five} five-star · {google} Google · {stops} stop' : '{five} five-star · {google} Google · {stops} stops')
+            : r.stops === 1 ? '{five} five-stars · {google} Google · {stops} stop' : '{five} five-stars · {google} Google · {stops} stops', { five: r.five, google: r.google, stops: r.stops }))}</div></div>
           <b>${r.points}</b></div>`).join('')}
       </div>
       ${lic ? licenseCard(lic) : ''}
@@ -317,7 +318,7 @@ async function showRoute() {
     <div class="top">
       <div style="display:flex;justify-content:space-between;align-items:center">
         <div><h1>${esc(t('Hi {name}', { name: ME.name.split(' ')[0] }))}</h1><div class="sub">${fmtDate(day, { weekday: 'long', month: 'short', day: 'numeric' })} · ${esc(t('{done} of {total} stops done', { done, total: r.stops.length }))}</div>${savedNote(r)}</div>
-        <button class="btn sm" id="out">${esc(t('Log out'))}</button>
+        <div style="display:flex;gap:6px"><button class="btn sm" data-theme-toggle title="${esc(t('Soft grey or bright white screen'))}" aria-label="${esc(t('Switch screen colour'))}">🌗</button><button class="btn sm" id="out">${esc(t('Log out'))}</button></div>
       </div>
       <div class="progress"><div style="width:${r.stops.length ? (done / r.stops.length) * 100 : 0}%"></div></div>
       <button type="button" id="gps" class="gps-badge"></button>
@@ -328,10 +329,11 @@ async function showRoute() {
       ${NV.slots('tech.top', { r })}
       ${clk ? `<div class="card" style="display:flex;align-items:center;gap:10px;padding:10px 14px">
         <div style="flex:1">${clk.clockedIn ? `⏱ <b>${esc(t('On the clock'))}</b> ${esc(t('since {time}', { time: new Date(clk.since).toLocaleTimeString(dateLocale(), { hour: 'numeric', minute: '2-digit' }) }))}` : `⏱ <b>${esc(t('Off the clock'))}</b>`}
-          <div class="small muted">${esc(t('{n} hours this week', { n: clk.weekHours }))}</div></div>
+          <div class="small muted">${esc(NV.tn(clk.weekHours, '{n} hour this week', '{n} hours this week'))}</div></div>
         <button class="btn ${clk.clockedIn ? '' : 'primary'}" id="clock">${esc(clk.clockedIn ? t('Clock out') : t('Clock in'))}</button></div>` : ''}
       ${fresh.length ? `<a href="#/stats" class="alert ok" style="text-decoration:none">🎉 ${esc(t(fresh[0].text))}${fresh.length > 1 ? ` ${esc(t('(+{n} more)', { n: fresh.length - 1 }))}` : ''}</a>` : ''}
-      ${next ? `<a class="btn primary big block" href="#/stop/${next.id}" style="margin-bottom:12px">${esc(t('▶ Next stop: {name}', { name: [next.first_name, next.last_name].filter(Boolean).join(' ') || next.company }))}</a>` : ''}
+      ${next ? `<a class="btn primary big block" href="#/stop/${next.id}" style="margin-bottom:12px">${esc(t('▶ Next stop: {name}', { name: next.company || [next.first_name, next.last_name].filter(Boolean).join(' ') }))}</a>` : ''}
+      ${r.plan?.after_hours ? `<div class="small" style="text-align:center;margin:-4px 0 10px;color:var(--warn,#b7791f)">${esc(t('The day ended at {time} with {n} stops still open. Check with the office before you go on.', { time: r.plan.end_text, n: r.plan.open_stops }))}</div>` : ''}
       ${r.plan?.finish_text ? `<div class="small muted" style="text-align:center;margin:-4px 0 10px">${esc(t('About {min} min of driving left · done around {time}', { min: r.plan.drive_min, time: r.plan.finish_text }))}</div>` : ''}
       ${r.summary.mapsUrl ? `<a class="btn block" href="${esc(r.summary.mapsUrl)}" target="_blank" style="margin-bottom:12px">${esc(t('🗺️ Whole route in Google Maps'))}${r.summary.miles ? ` (~${r.summary.miles} mi)` : ''}</a>` : ''}
       ${r.stops.length ? r.stops.map((s, i) => `<div class="tstop-wrap"><a class="tstop ${s.status}" href="#/stop/${s.id}">
@@ -339,7 +341,7 @@ async function showRoute() {
         ${s.photo_id || s.lat != null ? `<img class="tthumb" src="${s.photo_id ? `/nuvolve/app/api/photos/${s.photo_id}` : housePhoto(s, 160, 160)}" alt="" loading="lazy">` : ''}
         <div class="info"><b>${esc(s.company || [s.first_name, s.last_name].filter(Boolean).join(' '))}</b>
           <div class="small">${esc(s.address)}, ${esc(s.city || '')}</div>
-          <div class="small muted">${esc(s.service_name || '')}${s.time_window ? ` · ⏰ ${esc(s.time_window)}` : ''}${s.status === 'skipped' ? ` · ${esc(t('Skipped'))}` : ''}</div>
+          <div class="small muted">${esc(s.service_name ? t(s.service_name) : '')}${s.time_window ? ` · ⏰ ${esc(s.time_window)}` : ''}${s.status === 'skipped' ? ` · ${esc(t('Skipped'))}` : ''}</div>
           ${NV.slots('tech.routeStop', { s, i })}
           ${s.on_site ? `<div class="small"><b>${esc(t('On site now'))}</b></div>` : s.eta_text ? `<div class="small ${s.late_min > 0 ? 'late' : ''}">${esc(t('ETA {time}', { time: s.eta_text }))}${s.late_min > 0 ? ` · ${esc(t('{n} min past the window', { n: s.late_min }))}` : ''}${s.omw_at ? ` · ${esc(t('✉️ Told on my way'))}` : ''}</div>` : ''}
           ${s.waiting ? `<div class="small waiting">${esc(t("⏳ Saved on this phone, sends when there's signal"))}</div>` : ''}${s.needsFix ? `<div class="small fix">${esc(t("⚠️ Didn't go through. Tap to fix."))}</div>` : ''}
@@ -394,7 +396,7 @@ async function showStop(id) {
   const done = v.status !== 'scheduled';
   app.innerHTML = `
     <div class="top"><a href="#/" style="color:#a8c3b4;text-decoration:none">← Route</a>
-      <h1 style="margin-top:6px">${esc(name)}</h1><div class="sub">${esc(v.service_name || 'Service')} · ${money(v.price)}</div>${savedNote(v)}</div>
+      <h1 style="margin-top:6px">${esc(name)}</h1><div class="sub">${esc(v.service_name ? t(v.service_name) : t('Service'))} · ${money(v.price)}</div>${savedNote(v)}</div>
     <div class="wrap">
       <div class="card flush house-card">
         ${v.property_photo_id || v.lat != null ? `<div class="house-pic"><img id="house-img" src="${v.property_photo_id ? `/nuvolve/app/api/photos/${v.property_photo_id}` : housePhoto(v, 780, 420)}" alt="Photo of ${esc(v.address)}">

@@ -341,7 +341,7 @@ async function salesTeam(view, params) {
     <div class="tabs">${[['today', 'Today'], ['week', 'Last 7 days'], ['month', 'This month'], ['year', 'This year']].map(([k, l]) => `<a href="#/sales?tab=team&period=${k}" class="${k === period ? 'on' : ''}">${l}</a>`).join('')}</div>
     <div class="stats">
       <div class="stat"><div class="label">Doors knocked</div><div class="value">${t.knocks}</div><div class="sub">${t.talks} conversations</div></div>
-      <div class="stat"><div class="label">Quotes</div><div class="value">${t.quotes}</div><div class="sub">${t.leads} leads from the door</div></div>
+      <div class="stat"><div class="label">Quotes</div><div class="value">${t.quotes}</div><div class="sub">${plural(t.leads, 'lead')} from the door</div></div>
       <div class="stat"><div class="label">Sales</div><div class="value">${t.sales}</div><div class="sub">${t.talks ? Math.round((t.sales / t.talks) * 1000) / 10 + '% of conversations' : '—'}</div></div>
       <div class="stat"><div class="label">Revenue sold</div><div class="value">${money(t.revenue)}</div><div class="sub">first-year value</div></div>
     </div>
@@ -408,6 +408,9 @@ async function pageAccount(view) {
         <div class="field"><label>New password</label><input name="password" type="password" minlength="10" autocomplete="new-password" required><div class="hint">At least 10 characters. Your other phones and browsers are logged out.</div></div>
         <div class="field"><label>New password again</label><input name="again" type="password" autocomplete="new-password" required></div>
         <button class="btn primary">Change password</button></form>
+      <div class="card"><h2>Screen colour</h2>
+        <p class="small muted">Soft grey is easier on the eyes than bright white, especially on long days. This browser remembers your pick.</p>
+        ${window.NVTheme ? NVTheme.picker() : ''}</div>
     </div>
     ${NV.slots('account.cards', { sec })}`;
   $('#pw').onsubmit = async (e) => {

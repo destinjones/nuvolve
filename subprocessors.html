@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Subprocessors · Nuvolve CRM</title>
+  <meta name="description" content="Every outside service that may handle data for Nuvolve, what it does and where.">
+  <meta property="og:title" content="Subprocessors · Nuvolve CRM">
+  <meta property="og:description" content="Every outside service that may handle data for Nuvolve, what it does and where.">
+  <link rel="canonical" href="https://destinjones.github.io/nuvolve/subprocessors.html">
+  <link rel="icon" href="/nuvolve/app/icons/nuvolve.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/nuvolve/app/css/site.css">
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"SoftwareApplication","name":"Nuvolve CRM","applicationCategory":"BusinessApplication","applicationSubCategory":"Pest control software","operatingSystem":"Web, iOS, Android","description":"Pest control CRM: routes, the tech phone app, billing and autopay, termite and commercial work, door-to-door sales, payroll and QuickBooks.","url":"https://destinjones.github.io/nuvolve/","offers":{"@type":"Offer","price":"39.00","priceCurrency":"USD","priceSpecification":{"@type":"UnitPriceSpecification","price":"39.00","priceCurrency":"USD","unitText":"route per month"}}}</script>
+  <script defer src="/nuvolve/app/js/site.js"></script>
+</head>
+<body data-page="subprocessors" data-lead-url="" data-support-email="support@nuvolvecrm.com">
+<header class="top"><div class="wrap">
+  <a class="brand" href="/nuvolve/"><img src="/nuvolve/app/icons/nuvolve.svg" alt="">Nuvolve CRM</a>
+  <nav aria-label="Nuvolve"><a href="/nuvolve/pricing.html">Pricing</a><a href="/nuvolve/compare.html">Compare</a><a href="/nuvolve/roi.html">ROI calculator</a><a href="/nuvolve/security.html">Security</a><a href="/nuvolve/call.html" data-event="Book call" data-where="nav">Book a call</a><a class="btn" href="/nuvolve/app/start.html?as=owner">Log in</a></nav>
+</div></header>
+<main class="wrap">
+<div class="hero">
+  <h1>Subprocessors</h1>
+  <p class="lead">Every outside service that may handle data to run Nuvolve, what it gets, and why. We give at least 30 days' notice here and by email to account owners before adding or replacing one, as the <a href="/nuvolve/dpa.html">Data Processing Addendum</a> says.</p>
+</div>
+
+<h2>Services that run Nuvolve</h2>
+<div class="table-scroll">
+<table class="compare">
+  <thead><tr><th>Service</th><th>What it does for Nuvolve</th><th>What data it handles</th><th>Where</th></tr></thead>
+  <tbody>
+    <tr><th>Render</th><td>Hosts the app, its databases and the nightly backups on the server's disk</td><td>All company data</td><td>United States</td></tr>
+    <tr><th><span class="ph">[Off-site backup storage: Amazon S3, Backblaze B2 or Cloudflare R2]</span></th><td>Keeps an encrypted off-site copy of each night's backup</td><td>All company data, in backup files</td><td>United States</td></tr>
+    <tr><th>Resend</th><td>Sends email: invoices, reminders, receipts, login links</td><td>Recipient names and email addresses, message contents</td><td>United States</td></tr>
+    <tr><th>Twilio</th><td>Sends and receives text messages and handles calls to your Nuvolve number</td><td>Phone numbers, message contents</td><td>United States</td></tr>
+    <tr><th>Stripe</th><td>Bills your Nuvolve subscription. (Your customers' payments go through your own Stripe account, under your agreement with Stripe.)</td><td>Account owner name, email, card details entered on Stripe's page</td><td>United States</td></tr>
+    <tr><th>Anthropic</th><td>The AI receptionist and Ask Nuvolve, when a company turns them on</td><td>The messages or business data needed for the answer. Not used to train models.</td><td>United States</td></tr>
+    <tr><th>Google Maps Platform</th><td>Drive times for route order and arrival times, address lookup</td><td>Service addresses and coordinates</td><td>United States</td></tr>
+    <tr><th>Mapbox</th><td>Map display and drive times, where the server is set up to use it</td><td>Coordinates and map views</td><td>United States</td></tr>
+    <tr><th>OpenStreetMap Nominatim and Photon (Komoot)</th><td>Address lookup when no paid map service is set up</td><td>Addresses being looked up, without names</td><td>Europe</td></tr>
+    <tr><th>Plausible Analytics</th><td>Counts visits to this website, without cookies (website only, never the app)</td><td>Page views, referrer, country. No personal data stored.</td><td>European Union</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2>Connections a company turns on itself</h2>
+<p class="muted">These only receive data when a company connects its own account, and they act under the company's own agreement with them, not as Nuvolve's subprocessors.</p>
+<ul class="ticks">
+  <li><b>Stripe</b> (the company's own account): customer payments, saved cards and autopay</li>
+  <li><b>QuickBooks Online</b> (Intuit): invoices, payments and payroll entries the company chooses to sync</li>
+  <li><b>Google Business Profile</b>: reading and replying to the company's reviews</li>
+  <li><b>Zapier</b> and webhooks: whatever events the company sends there</li>
+</ul>
+
+<h2>Lookups that carry no personal data</h2>
+<ul class="ticks">
+  <li>Have I Been Pwned: checks whether a new password has appeared in a known breach. Only the first five characters of the password's hash are sent, never the password or the email.</li>
+  <li>EPA pesticide product label lookup, and Esri map tiles: public data, nothing about your customers is sent.</li>
+</ul>
+
+<p class="small muted">Want an email when this list changes? Write to <a href="mailto:support@nuvolvecrm.com">support@nuvolvecrm.com</a>. Account owners are told automatically.</p>
+
+<p class="small muted page-date">Last checked November 1, 2026</p>
+</main>
+<footer class="foot"><div class="wrap">
+  <div class="foot-cols"><div><h4>Product</h4><a href="/nuvolve/pricing.html">Pricing</a><a href="/nuvolve/status.html">System status</a><a href="/nuvolve/compare.html">Compare</a><a href="/nuvolve/roi.html">ROI calculator</a><a href="/nuvolve/help.html">Help center</a><a href="/nuvolve/changelog.html">Changelog</a><a href="/nuvolve/roadmap.html">Roadmap</a></div><div><h4>Company</h4><a href="/nuvolve/about.html">About Nuvolve</a><a href="/nuvolve/fit.html">Who it&#39;s for</a><a href="/nuvolve/beta.html">Founding shops</a><a href="/nuvolve/call.html">Book a call</a><a href="/nuvolve/promises.html">What we won&#39;t do</a></div><div><h4>Resources</h4><a href="/nuvolve/blog.html">Guides</a><a href="/nuvolve/glossary.html">Pest control glossary</a></div><div><h4>Legal</h4><a href="/nuvolve/security.html">Security</a><a href="/nuvolve/data.html">Your data</a><a href="/nuvolve/terms.html">Terms of Service</a><a href="/nuvolve/privacy.html">Privacy Policy</a><a href="/nuvolve/dpa.html">Data Processing Addendum</a><a href="/nuvolve/subprocessors.html">Subprocessors</a><a href="/nuvolve/sla.html">Service Level Agreement</a></div></div>
+  <div class="foot-cta">
+    <a class="btn primary" href="/nuvolve/beta.html?from=signup" data-event="Start trial" data-where="footer">Start a free trial</a>
+    <a class="btn" href="/nuvolve/call.html" data-event="Book call" data-where="footer">Book a 15-minute call</a>
+  </div>
+  <p class="entity">© 2026 [Legal entity name, LLC] · [Mailing address] · <a href="tel:">(XXX) XXX-XXXX</a> · <a href="mailto:support@nuvolvecrm.com">support@nuvolvecrm.com</a><br>Support hours: Mon-Fri 7am-6pm and Sat 8am-noon Central</p>
+</div></footer>
+</body>
+</html>

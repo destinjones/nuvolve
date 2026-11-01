@@ -55,6 +55,8 @@ function render() {
       <div class="field"><label for="nm">${esc(t('Your full name'))}</label><input id="nm" autocomplete="name" value="${esc(cu.name || '')}"></div>
       <div class="field"><label>${esc(t('Sign here with your finger or mouse'))}</label><canvas class="sig" id="sig"></canvas><button type="button" class="link-btn small" id="clr">${esc(t('Clear'))}</button></div>
       <label class="check"><input type="checkbox" id="agree"> ${esc(t('I agree to the service agreement above and authorize {company} to provide these services.', { company: co.name || t('the company') }))}</label>
+      ${D.autorenew ? `<div class="alert warn" id="ar-box" style="display:block;margin-top:12px;white-space:pre-line"><b>${esc(t('Automatic renewal'))}</b>\n${esc(D.autorenew.text)}</div>
+      <label class="check"><input type="checkbox" id="agree-ar"> ${esc(t('I understand this plan renews automatically and I will be charged until I cancel.'))}</label>` : ''}
       <button class="btn primary big block" id="ok" style="margin-top:12px">${esc(t('Sign and accept'))}</button>
       <p style="text-align:center;margin-top:12px"><button class="link-btn small" id="no">${esc(t('No thanks'))}</button></p>`;
     const pad = signaturePad($('#sig'));
@@ -63,9 +65,10 @@ function render() {
       const sig = pad.value();
       if (!sig) return toast(t('Please sign in the box'), true);
       if (!$('#agree').checked) return toast(t('Tick the box to agree to the terms'), true);
+      if (D.autorenew && !$('#agree-ar').checked) return toast(t('Tick the box to agree to the automatic renewal'), true);
       ev.target.disabled = true;
       try {
-        await api(`/nuvolve/app/api/sign/${token}/accept`, { body: { name: $('#nm').value, signature: sig, agree: true } });
+        await api(`/nuvolve/app/api/sign/${token}/accept`, { body: { name: $('#nm').value, signature: sig, agree: true, agree_autorenew: Boolean(D.autorenew) } });
         toast(t('Signed. Thank you!'));
         await load();
         window.scrollTo(0, document.body.scrollHeight);

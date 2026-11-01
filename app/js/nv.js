@@ -14,6 +14,8 @@
 //   NV.t(text, vars)         the text in the current language (NV.lang: 'en' or 'es'). English text is the key.
 //   NV.useLang(lang, {remember})  switches language and loads its translations (from the phone first, then the
 //                            server). remember: true keeps the choice on this device (NV.preferredLang reads it).
+//   NV.useCompanyStrings(map)  the company's own words in Spanish ({ 'Quarterly Home Shield': 'Escudo trimestral' }),
+//                            from Settings; NV.t uses them before the catalog. Pages get the map with their data.
 //
 // Slots in the core screens (data passed in brackets):
 //   office    today.alerts {d}, customer.tags {c, home}, customer.actions {c}, customer.alerts {c}, customer.left {c},
@@ -97,9 +99,19 @@
     // ---------- language ----------
     lang: 'en',
     strings: {},
+    // Kept apart from `strings` because loading the catalog replaces those, and these come with the page's data.
+    companyStrings: {},
+    useCompanyStrings(map) { if (map && typeof map === 'object') NV.companyStrings = { ...NV.companyStrings, ...map }; },
+    // One string in the current language: the company's own Spanish first (it's their wording), then the catalog.
+    str(text) { return NV.lang === 'en' ? undefined : (Object.hasOwn(NV.companyStrings, text) ? NV.companyStrings[text] : NV.strings[text]); },
     t(text, vars) {
-      const tpl = (NV.lang !== 'en' && NV.strings[text]) || text;
+      const tpl = NV.str(text) || text;
       return String(tpl).replace(/\{(\w+)\}/g, (m, k) => (vars && vars[k] != null ? String(vars[k]) : m));
+    },
+    // A count in the page's language: tn(n, '{n} stop', '{n} stops'). Both forms are catalog keys, since the Spanish
+    // noun (and its adjectives) change too. English and Spanish both use the singular for exactly one.
+    tn(n, one, other, vars = {}) {
+      return NV.t(Number(n) === 1 ? one : other, { n, ...vars });
     },
     // The language picked on this phone wins over the account's: pages call NV.useLang(NV.preferredLang(me.lang)).
     preferredLang(fallback) { try { return localStorage.getItem('nv_lang') || fallback || 'en'; } catch { return fallback || 'en'; } },

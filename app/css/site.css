@@ -94,3 +94,63 @@ details p { margin: 8px 0 0; color: var(--muted); }
   .card { padding: 18px; }
   .grid.two { grid-template-columns: 1fr; }
 }
+
+/* the rest of the public site: legal drafts, comparisons, guides, forms, the ROI calculator and status */
+.draft-banner { margin: 20px 0 0; background: #fff8e1; border: 1px solid #ecc85c; border-radius: var(--radius); padding: 12px 16px; font-size: 15px; }
+.crumb { margin: 22px 0 -24px; }
+.crumb a { text-decoration: none; }
+.page-date { margin-top: 28px; }
+.prose { max-width: 760px; }
+.prose h2 { margin-top: 30px; }
+.prose h3 { margin-top: 20px; }
+.prose li { margin-bottom: 6px; }
+.callout { background: var(--panel); border-left: 4px solid var(--brand); border-radius: 6px; padding: 14px 18px; margin: 16px 0; box-shadow: var(--shadow); }
+.ph { background: #fff3c4; padding: 0 4px; border-radius: 3px; }
+table.compare { width: 100%; border-collapse: collapse; font-size: 15px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+table.compare th, table.compare td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+table.compare thead th { background: var(--brand-soft); font-size: 14px; }
+table.compare tbody th { font-weight: 600; width: 26%; }
+.table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+/* forms */
+.form { display: grid; gap: 12px; max-width: 560px; }
+.form label { display: grid; gap: 4px; font-weight: 600; font-size: 14px; }
+.form input, .form select, .form textarea { font: inherit; font-weight: 400; padding: 10px 12px; border: 1px solid #cbd5e0; border-radius: 8px; background: #fff; color: var(--ink); width: 100%; }
+.form .row { display: grid; gap: 12px; grid-template-columns: 1fr 1fr; }
+.form .hp { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
+.form-msg.ok { color: var(--brand-dark); font-weight: 600; }
+.form-msg.err { color: #c53030; font-weight: 600; }
+.inline-form { display: flex; gap: 8px; flex-wrap: wrap; max-width: 520px; }
+.inline-form input { flex: 1 1 220px; font: inherit; padding: 10px 12px; border: 1px solid #cbd5e0; border-radius: 8px; }
+
+/* ROI */
+.roi { display: grid; gap: 20px; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); align-items: start; }
+.roi fieldset { border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px 6px; margin: 0 0 14px; background: var(--panel); }
+.roi legend { font-weight: 700; padding: 0 6px; }
+.roi label { display: grid; grid-template-columns: 1fr 120px; gap: 10px; align-items: center; font-size: 15px; margin-bottom: 10px; }
+.roi input { font: inherit; padding: 8px 10px; border: 1px solid #cbd5e0; border-radius: 8px; width: 100%; text-align: right; }
+.roi .out { position: sticky; top: 12px; }
+.roi .big { font-size: 40px; font-weight: 800; color: var(--brand-dark); line-height: 1.1; }
+
+/* status */
+.state-ok { color: var(--brand-dark); font-weight: 600; }
+.state-warn { color: #b7791f; font-weight: 600; }
+.state-bad { color: #c53030; font-weight: 600; }
+
+/* footer */
+.foot .wrap { display: block; }
+.foot-cols { display: grid; gap: 18px; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.foot-cols h4 { margin: 0 0 8px; color: var(--ink); font-size: 14px; }
+.foot-cols a { display: block; padding: 3px 0; text-decoration: none; }
+.foot-cols a:hover { text-decoration: underline; }
+.foot-cta { display: flex; gap: 10px; flex-wrap: wrap; margin: 22px 0 14px; }
+.entity { margin: 0; line-height: 1.7; }
+@media (max-width: 720px) {
+  .foot-cols { grid-template-columns: 1fr 1fr; }
+  .roi { grid-template-columns: 1fr; }
+  .roi .out { position: static; }
+  .form .row { grid-template-columns: 1fr; }
+  .roi label { grid-template-columns: 1fr 100px; }
+}
+.glossary dt { font-weight: 700; margin-top: 18px; font-size: 17px; }
+.glossary dd { margin: 4px 0 0; color: var(--muted); }

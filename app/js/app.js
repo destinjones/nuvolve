@@ -164,8 +164,40 @@ function renderSetup() {
       // The browser's time zone becomes the company's, so "today" turns over at the owner's midnight. Settings can change it.
       const body = formData(e.target);
       try { body.timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch { body.timezone = ''; }
+      // An invite code (invite-only sign-up) and an owner's referral code ride along from the link.
+      const q = new URLSearchParams(location.search);
+      if (q.get('invite')) body.invite = q.get('invite');
+      if (q.get('ref')) body.partner_ref = q.get('ref');
       await api('/nuvolve/app/api/signup', { body });
       location.href = '/nuvolve/app/';
+    } catch (err) {
+      if (/Join the waitlist/.test(err.message)) return renderWaitlist($('#f [name=email]').value, $('#f [name=company_name]').value);
+      toast(err.message, true);
+    }
+  };
+}
+
+// Invite-only sign-up (SIGNUP_MODE=waitlist): say so plainly and keep their email instead of losing them.
+function renderWaitlist(email = '', company = '') {
+  root.innerHTML = `<div class="login-wrap"><div class="login" style="max-width:520px"><div class="card">
+    <h1>Accounts open in batches</h1>
+    <p class="muted">We're opening Nuvolve to a few pest companies at a time so each one gets a hand moving in. Leave your email and we'll send your invite, usually within a week.</p>
+    <form id="wl">
+      <div class="field"><label>Email</label><input name="email" type="email" required value="${esc(email)}"></div>
+      <div class="row"><div class="field"><label>Company</label><input name="company" value="${esc(company)}"></div>
+        <div class="field"><label>Trucks on the road</label><input name="trucks" type="number" min="1" inputmode="numeric"></div></div>
+      <input name="website" hidden tabindex="-1" autocomplete="off">
+      <label class="check"><input type="checkbox" name="call" value="1"> I'd like a 15-minute call</label>
+      <button class="btn primary big block" style="margin-top:10px">Save my spot</button>
+    </form>
+    <p class="small" style="text-align:center;margin-top:12px">Already have an account? <a href="/nuvolve/app/">Log in</a></p></div></div></div>`;
+  $('#wl').onsubmit = async (e) => {
+    e.preventDefault();
+    const b = formData(e.target);
+    const q = new URLSearchParams(location.search);
+    try {
+      await api('/nuvolve/app/api/waitlist', { body: { ...b, intent: b.call ? 'call' : 'waitlist', ref: q.get('ref') || undefined, source: 'app sign-up' } });
+      $('#wl').outerHTML = '<p><b>You\'re on the list.</b> We\'ll email you when your account is ready.</p>';
     } catch (err) { toast(err.message, true); }
   };
 }
@@ -206,7 +238,7 @@ function navHtml() {
   const items = NV.navList(NAV).filter((n) => n[0] === '§' || can(n));
   return items.filter((n, i) => n[0] !== '§' || (items[i + 1] && items[i + 1][0] !== '§')).map((n) => (n[0] === '§'
     ? `<div class="nav-section">${n[1]}</div>`
-    : `<a href="${n[0]}" data-href="${n[0]}"><span class="ico">${n[1]}</span>${n[2]}${n[0] === '#/reviews' && BOOT.unread ? `<span class="badge">${BOOT.unread}</span>` : ''}</a>`)).join('');
+    : `<a href="${n[0]}" data-href="${n[0]}"><span class="ico">${n[1]}</span>${n[2]}${n[0] === '#/reviews' && BOOT.review_unread ? `<span class="badge">${BOOT.review_unread}</span>` : ''}</a>`)).join('');
 }
 
 function renderShell() {
@@ -214,7 +246,7 @@ function renderShell() {
     <aside class="sidebar">
       <div class="brand">${LOGO}<span>${esc(BOOT.settings.company_name || 'Nuvolve CRM')}<span class="sub">Nuvolve CRM</span></span></div>
       <nav class="nav">${navHtml()}</nav>
-      <div class="me">${esc(BOOT.me.name)} <span class="small">(${ROLE_LABEL[BOOT.me.role] || ''}${BOOT.me.location_id ? ' · ' + esc(branchName(BOOT.me.location_id)) : ''})</span><br><a href="#/account" style="color:#cfe0d6">My account${BOOT.me.totp_enabled ? ' 🔒' : ''}</a> · <button id="logout">Log out</button> · <a href="/nuvolve/app/tech" style="color:#cfe0d6">Tech view</a></div>
+      <div class="me">${esc(BOOT.me.name)} <span class="small">(${ROLE_LABEL[BOOT.me.role] || ''}${BOOT.me.location_id ? ' · ' + esc(branchName(BOOT.me.location_id)) : ''})</span><br><a href="#/account" style="color:#cfe0d6">My account${BOOT.me.totp_enabled ? ' 🔒' : ''}</a> · <button id="logout">Log out</button> · <a href="/nuvolve/app/tech" style="color:#cfe0d6">Tech view</a><br><button data-theme-toggle title="Switch between soft grey and bright white">🌗 Screen colour</button></div>
     </aside>
     <main class="main">
       <div class="search-bar no-print">
@@ -379,7 +411,7 @@ async function pageToday(view) {
       </div>
 
       <div>
-        ${doneCount < steps.length ? `<div class="card">
+        ${doneCount < steps.length && !BOOT.me.golive ? `<div class="card">
           <div class="card-head"><h2>Getting started</h2><span class="muted small">${doneCount} of ${steps.length}</span></div>
           <ul class="steps">${steps.map(([done, text, href]) => `<li class="${done ? 'done' : ''}"><span class="tick">${done ? '✓' : ''}</span><span class="t">${text}</span>${done ? '' : `<a class="btn sm" href="${href}">Go</a>`}</li>`).join('')}</ul>
         </div>` : ''}
@@ -653,7 +685,7 @@ async function pageCustomer(view, id) {
         <div class="card">
           <div class="card-head"><h2>Invoices</h2><button class="btn sm" id="a-inv">+ New invoice</button></div>
           ${c.invoices.length ? `<table class="list"><tbody>${c.invoices.slice(0, 12).map((i) => `<tr>
-            <td><a href="/nuvolve/app/api/invoices/${i.id}/view" target="_blank" rel="noopener"><b>#${i.id}</b></a> <span class="small muted">${fmtDate(i.date)}</span><div class="small muted">${esc(i.description || '')}</div></td>
+            <td><a href="/nuvolve/app/api/invoices/${i.id}/view" target="_blank" rel="noopener"><b>${esc(i.number || `#${i.id}`)}</b></a> <span class="small muted">${fmtDate(i.date)}</span><div class="small muted">${esc(i.description || '')}</div></td>
             <td class="right nowrap">${money(i.amount)}${i.status === 'open' && i.amount_paid > 0 ? `<div class="small muted">${money(i.amount - i.amount_paid)} left</div>` : ''}</td>
             <td class="right">${i.status === 'open' && i.due_date < todayStr() ? '<span class="pill red">Past due</span>' : statusPill(i.status)}</td>
             <td class="right">${i.status === 'open' ? `<button class="btn sm" data-payinv="${i.id}">Pay</button>` : ''}</td></tr>`).join('')}</tbody></table>` : '<p class="muted">Invoices are created automatically when a stop is completed.</p>'}
@@ -662,7 +694,7 @@ async function pageCustomer(view, id) {
         <div class="card">
           <div class="card-head"><h2>Payments</h2></div>
           ${c.payments.length ? c.payments.slice(0, 10).map((p) => `<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--line)">
-            <span>${fmtDate(p.date)} · ${esc(p.method)}${p.reference ? ` <span class="small muted">${esc(p.reference)}</span>` : ''}</span><b>${money(p.amount)}</b></div>`).join('') : '<p class="muted">No payments yet.</p>'}
+            <span>${fmtDate(p.date)} · ${esc(payMethodLabel(p.method))}${p.reference ? ` <span class="small muted">${esc(p.reference)}</span>` : ''}</span><b>${money(p.amount)}</b></div>`).join('') : '<p class="muted">No payments yet.</p>'}
         </div>
 
         <div class="card">
@@ -884,11 +916,11 @@ function takePaymentModal(c, invoice) {
     const due = invoice ? invoice.amount - invoice.amount_paid : cust.balance;
     box.innerHTML = `
       <p><b>${esc(custName(cust))}</b> owes <b>${money(cust.balance)}</b></p>
-      <div class="field"><label>Apply to</label><select name="invoice_id" id="tp-inv"><option value="">Oldest invoices first</option>${open.map((i) => `<option value="${i.id}" data-due="${(i.amount - i.amount_paid).toFixed(2)}" ${invoice?.id === i.id ? 'selected' : ''}>#${i.id} · ${fmtDate(i.date)} · ${money(i.amount - i.amount_paid)}</option>`).join('')}</select></div>
+      <div class="field"><label>Apply to</label><select name="invoice_id" id="tp-inv"><option value="">Oldest invoices first</option>${open.map((i) => `<option value="${i.id}" data-due="${(i.amount - i.amount_paid).toFixed(2)}" ${invoice?.id === i.id ? 'selected' : ''}>${esc(i.number || `#${i.id}`)} · ${fmtDate(i.date)} · ${money(i.amount - i.amount_paid)}</option>`).join('')}</select></div>
       <div class="row"><div class="field"><label>Amount</label><input name="amount" id="tp-amt" type="number" step="0.01" value="${due > 0 ? due.toFixed(2) : ''}"></div>
       <div class="field"><label>Method</label><select name="method" id="tp-method">
         ${cust.card_last4 ? `<option value="cof">Charge card on file (••${esc(cust.card_last4)})</option>` : ''}
-        <option value="cash">Cash</option><option value="check">Check</option><option value="card">Card (ran elsewhere)</option><option value="ach">Bank transfer</option></select></div></div>
+        <option value="cash">Cash</option><option value="check">Check</option><option value="card">Card (ran elsewhere)</option><option value="ach">Bank (ACH)</option></select></div></div>
       <div class="field" id="tp-ref-wrap"><label>Check # or note</label><input name="reference"></div>
       <button class="btn primary block big" id="tp-save">Record payment</button>
       ${cust.card_last4 ? '' : `<p class="small muted" style="margin-top:12px">Want them to pay by card? <button class="link-btn" id="tp-link">Send their pay link</button></p>`}`;
@@ -986,7 +1018,7 @@ async function pageSchedule(view, _id, params) {
 
   view.innerHTML = `
     <div class="page-head">
-      <div><h1>Schedule</h1><div class="muted">Week of ${fmtDate(start)} · ${visits.length} visits · drag a visit to move it</div></div>
+      <div><h1>Schedule</h1><div class="muted">Week of ${fmtDate(start)} · ${plural(visits.length, 'visit')} · drag a visit to move it</div></div>
       <div class="actions">
         <a class="btn" href="#/schedule?week=${addDays(start, -7)}">← Prev</a>
         <a class="btn" href="#/schedule">This week</a>
@@ -1047,7 +1079,7 @@ async function pageMissed(view) {
   const move = (id) => api(`/nuvolve/app/api/visits/${id}`, { method: 'PUT', body: { date: addDays(todayStr(), 1) } });
   $$('[data-tomorrow]', view).forEach((b) => (b.onclick = async () => { await move(b.dataset.tomorrow); toast('Moved'); route(); }));
   $$('[data-skip]', view).forEach((b) => (b.onclick = async () => { await api(`/nuvolve/app/api/visits/${b.dataset.skip}/skip`, { body: { reason: 'Skipped by office' } }); route(); }));
-  if ($('#all-tomorrow')) $('#all-tomorrow').onclick = async () => { for (const v of rows) await move(v.id); toast(`Moved ${rows.length} stops to tomorrow`); route(); };
+  if ($('#all-tomorrow')) $('#all-tomorrow').onclick = async () => { for (const v of rows) await move(v.id); toast(`Moved ${plural(rows.length, 'stop')} to tomorrow`); route(); };
 }
 
 // ---------- Routes ----------
@@ -1244,9 +1276,9 @@ async function pageBilling(view, _id, params) {
     <div class="card flush"><div class="table-wrap">
     ${rows.length ? (isPayments
       ? `<table class="list"><thead><tr><th>Date</th><th>Customer</th><th>Method</th><th class="right">Amount</th></tr></thead><tbody>
-        ${rows.map((p) => `<tr class="click" data-cust="${p.customer_id}"><td>${fmtDate(p.date)}</td><td>${esc(custName(p))}</td><td>${esc(p.method)} <span class="small muted">${esc(p.reference || '')}</span></td><td class="right">${money(p.amount)}</td></tr>`).join('')}</tbody></table>`
+        ${rows.map((p) => `<tr class="click" data-cust="${p.customer_id}"><td>${fmtDate(p.date)}</td><td>${esc(custName(p))}</td><td>${esc(payMethodLabel(p.method))} <span class="small muted">${esc(p.reference || '')}</span></td><td class="right">${money(p.amount)}</td></tr>`).join('')}</tbody></table>`
       : `<table class="list"><thead><tr><th>Invoice</th><th>Customer</th><th>Due</th><th class="right">Amount</th><th class="right">Owed</th><th></th></tr></thead><tbody>
-        ${rows.map((i) => `<tr><td><a href="/nuvolve/app/api/invoices/${i.id}/view" target="_blank" rel="noopener"><b>#${i.id}</b></a><div class="small muted">${esc(i.description || '')}</div></td>
+        ${rows.map((i) => `<tr><td><a href="/nuvolve/app/api/invoices/${i.id}/view" target="_blank" rel="noopener"><b>${esc(i.number || `#${i.id}`)}</b></a><div class="small muted">${esc(i.description || '')}</div></td>
           <td><a href="#/customers/${i.customer_id}">${esc(custName(i))}</a>${i.autopay ? ' <span class="pill green">Autopay</span>' : ''}<div class="small muted">${esc(i.phone || '')}</div></td>
           <td class="nowrap">${fmtDate(i.due_date)} ${i.status === 'open' && i.due_date < todayStr() ? '<span class="pill red">Past due</span>' : ''}</td>
           <td class="right">${money(i.amount)}</td><td class="right"><b>${money(i.amount - i.amount_paid)}</b></td>
@@ -1276,7 +1308,7 @@ async function pageBilling(view, _id, params) {
     const ids = [...new Set(rows.map((r) => r.customer_id))];
     let ok = 0;
     for (const id of ids) { try { await api(`/nuvolve/app/api/customers/${id}/remind`, { method: 'POST' }); ok++; } catch { /* no contact info */ } }
-    toast(`Reminders sent to ${ok} of ${ids.length} customers`);
+    toast(`Reminders sent to ${ok} of ${plural(ids.length, 'customer')}`);
     e.target.disabled = false;
   };
   if ($('#charge-all')) $('#charge-all').onclick = async (e) => {
@@ -1352,12 +1384,12 @@ function priceIncreaseModal() {
     const box = $('#pi-preview', el);
     if (box.dataset.ready === JSON.stringify(body)) {
       const r = await api('/nuvolve/app/api/plans/price-increase', { body: { ...body, apply: true } });
-      toast(`${r.count} plans updated${r.notified ? `, ${r.notified} customers emailed` : ''}`);
+      toast(`${plural(r.count, 'plan')} updated${r.notified ? `, ${plural(r.notified, 'customer')} emailed` : ''}`);
       return route();
     }
     const p = await api('/nuvolve/app/api/plans/price-increase', { body });
     box.dataset.ready = JSON.stringify(body);
-    box.innerHTML = p.count ? `<div class="alert info"><span><b>${p.count} plans</b> go up, about <b>${money(p.extraPerYear)}</b> more a year. Click <b>Apply</b> to save.</span></div>
+    box.innerHTML = p.count ? `<div class="alert info"><span><b>${plural(p.count, 'plan')}</b> go${p.count === 1 ? 'es' : ''} up, about <b>${money(p.extraPerYear)}</b> more a year. Click <b>Apply</b> to save.</span></div>
       <div class="table-wrap" style="max-height:260px;overflow:auto"><table class="list small"><thead><tr><th>Customer</th><th>Service</th><th class="right">Now</th><th class="right">New</th></tr></thead><tbody>
       ${p.changes.map((c) => `<tr><td>${esc(c.customer_name)}</td><td>${esc(c.service || '')}</td><td class="right">${money(c.old_price)}</td><td class="right"><b>${money(c.new_price)}</b></td></tr>`).join('')}</tbody></table></div>`
       : '<p class="muted">No plans match.</p>';
@@ -1464,14 +1496,19 @@ function templateModal(tpls, t) {
 async function pageReviews(view, _id, params) {
   const period = params.period || 'month';
   const [lb, rv] = await Promise.all([api(`/nuvolve/app/api/leaderboard?period=${period}`), api(`/nuvolve/app/api/reviews?period=${period}`)]);
-  if (BOOT.unread) { api('/nuvolve/app/api/notifications/read', { method: 'POST' }); BOOT.unread = 0; $$('.nav .badge').forEach((b) => b.remove()); }
+  // Seeing the ratings clears only the review notes; the dashboard keeps the rest.
+  if (BOOT.review_unread) {
+    api('/nuvolve/app/api/notifications/read', { method: 'POST', body: { kinds: ['five_star', 'low_rating', 'google'] } });
+    BOOT.unread = Math.max(0, (BOOT.unread || 0) - BOOT.review_unread); BOOT.review_unread = 0;
+    $$('.nav a[data-href="#/reviews"] .badge').forEach((b) => b.remove());
+  }
   const sm = rv.summary;
   view.innerHTML = `
     <div class="page-head"><div><h1>Reviews and leaderboard</h1><div class="muted">Every completed stop sends a 1-tap rating. 5-stars get asked to post on Google.</div></div>
       <div class="actions">${[['week', 'This week'], ['month', 'This month'], ['year', 'This year'], ['all', 'All time']].map(([k, l]) => `<a class="btn sm ${k === period ? 'primary' : ''}" href="#/reviews?period=${k}">${l}</a>`).join('')}</div></div>
     ${!BOOT.settings.google_review_url ? `<div class="alert warn"><span>Add your Google review link in Settings so happy customers can post a public review in one tap.</span>${BOOT.me.isAdmin ? '<a class="btn sm" href="#/settings">Settings</a>' : ''}</div>` : ''}
     <div class="stats">
-      <div class="stat"><div class="label">Average rating</div><div class="value">${sm.avg ? sm.avg.toFixed(2) + ' ⭐' : '—'}</div><div class="sub">${sm.rated || 0} of ${sm.asked || 0} customers rated</div></div>
+      <div class="stat"><div class="label">Average rating</div><div class="value">${sm.avg ? sm.avg.toFixed(2) + ' ⭐' : '—'}</div><div class="sub">${sm.rated || 0} of ${plural(sm.asked || 0, 'customer')} rated</div></div>
       <div class="stat"><div class="label">5-star ratings</div><div class="value">${sm.five || 0}</div></div>
       <div class="stat"><div class="label">Clicked through to Google</div><div class="value">${sm.google || 0}</div><div class="sub">${sm.five ? Math.round(((sm.google || 0) / sm.five) * 100) : 0}% of 5-stars</div></div>
     </div>
@@ -1533,7 +1570,33 @@ async function pagePlatform(view, _id, params = {}) {
     <div class="card flush"><div class="table-wrap"><table class="list"><thead><tr><th>Company</th><th>Status</th><th>Signed up</th><th class="right">Routes</th><th class="right">Users</th><th class="right">Customers</th><th class="right">Stops (30 days)</th></tr></thead><tbody>
     ${d.companies.map((c) => `<tr><td><b>${esc(c.name)}</b></td><td>${{ trialing: `<span class="pill blue">Trial to ${fmtDate(c.trial_ends)}</span>`, active: '<span class="pill green">Paying</span>', past_due: '<span class="pill red">Past due</span>', canceled: '<span class="pill">Canceled</span>' }[c.status]}</td>
       <td>${fmtDate(c.created_at)}</td><td class="right">${c.routes}</td><td class="right">${c.users}</td><td class="right">${c.customers}</td><td class="right">${c.stopsLast30}</td></tr>`).join('')}
-    </tbody></table></div></div>`;
+    </tbody></table></div></div>
+    <div class="card" style="max-width:860px"><h2>Texting numbers</h2>
+      <p class="small">Every company texts through your one Twilio account, so each number and messaging service belongs to one company here. A company can only save and send from what's assigned to it (and the shared <code>TWILIO_FROM</code> when it has nothing of its own).${d.textingLive ? '' : ' Texting isn\'t live on this server yet, so companies can type any value until it is.'}</p>
+      ${d.senders.length ? `<div class="table-wrap"><table class="list"><thead><tr><th>Number or service</th><th>Company</th><th>Branch</th><th>Note</th><th></th></tr></thead><tbody>
+        ${d.senders.map((s) => { const co = d.companies.find((c) => c.id === s.company_id); return `<tr><td class="mono">${esc(s.sender)}</td><td>${esc(co ? co.name : `#${s.company_id}`)}</td>
+          <td>${esc(s.location_id ? (co?.branches || []).find((b) => b.id === s.location_id)?.name || `#${s.location_id}` : 'Any branch')}</td><td class="small muted">${esc(s.note || '')}</td>
+          <td>${s.from_env ? '<span class="small muted">TWILIO_SENDERS</span>' : `<button class="btn sm" data-unassign="${esc(s.sender)}">Remove</button>`}</td></tr>`; }).join('')}
+      </tbody></table></div>` : '<p class="muted">Nothing assigned yet.</p>'}
+      <form id="pa-sender" class="row" style="margin-top:12px;align-items:flex-end">
+        <div class="field"><label>Number or messaging service</label><input name="sender" required placeholder="(214) 555-0100 or MG..."></div>
+        <div class="field"><label>Company</label><select name="company_id" id="pa-co">${d.companies.map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select></div>
+        <div class="field"><label>Branch</label><select name="location_id" id="pa-branch"></select></div>
+        <div class="field"><label>Note</label><input name="note" maxlength="200"></div>
+        <button class="btn primary">Assign</button>
+      </form></div>`;
+  const branches = () => {
+    const co = d.companies.find((c) => String(c.id) === $('#pa-co').value);
+    $('#pa-branch').innerHTML = `<option value="">Any branch</option>${(co?.branches || []).map((b) => `<option value="${b.id}">${esc(b.name)}</option>`).join('')}`;
+  };
+  if ($('#pa-co')) { $('#pa-co').onchange = branches; branches(); }
+  $('#pa-sender').onsubmit = async (e) => {
+    e.preventDefault();
+    try { await api('/nuvolve/app/api/platform/senders', { body: formData(e.target) }); toast('Assigned'); route(); } catch (err) { toast(err.message, true); }
+  };
+  $$('[data-unassign]', view).forEach((b) => (b.onclick = async () => {
+    try { await api(`/nuvolve/app/api/platform/senders/${encodeURIComponent(b.dataset.unassign)}`, { method: 'DELETE' }); toast('Removed'); route(); } catch (err) { toast(err.message, true); }
+  }));
 }
 
 // ---------- Outbox ----------

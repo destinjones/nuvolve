@@ -110,7 +110,7 @@ function render() {
         <a class="btn block" href="/nuvolve/app/api/portal/${token}/report" target="_blank" rel="noopener">View pesticide application record</a>
         ${D.hasDevices ? `<a class="btn block" style="margin-top:8px" href="/nuvolve/app/api/portal/${token}/device-report" target="_blank" rel="noopener">View station inspection report</a>` : ''}</div>` : ''}
 
-      ${D.invoices?.length ? `<div class="card"><h2>Invoices</h2>${D.invoices.map((i) => `<div class="line small"><span>#${i.id} · ${fmtDate(i.date)}<br><span class="muted">${esc(i.description || 'Service')}</span></span>
+      ${D.invoices?.length ? `<div class="card"><h2>Invoices</h2>${D.invoices.map((i) => `<div class="line small"><span>${esc(i.number || `#${i.id}`)} · ${fmtDate(i.date)}<br><span class="muted">${esc(i.description || 'Service')}</span></span>
         <span style="text-align:right">${money(i.amount)}<br><a href="/nuvolve/app/api/portal/${token}/invoices/${i.id}" target="_blank" rel="noopener">${i.status === 'paid' ? 'Receipt' : 'View'}</a></span></div>`).join('')}</div>` : ''}
 
       ${D.agreements?.length ? `<div class="card"><h2>Estimates and agreements</h2>${D.agreements.map((a) => `<div class="line"><span>${esc(a.title || 'Service agreement')} <span class="small muted">${a.status === 'accepted' ? `signed ${fmtDate(a.accepted_at)}` : 'waiting for your signature'}</span></span>
@@ -132,6 +132,8 @@ function render() {
       ${NV.slots('portal.cards', { data: D, token })}
 
       ${D.referral ? `<label class="check small" style="justify-content:center;margin-bottom:8px"><input type="checkbox" id="offers" ${D.referral.optedOut ? '' : 'checked'}> Send me seasonal offers</label>` : ''}
+
+      ${window.NVTheme ? `<div class="small muted" style="text-align:center;margin-bottom:10px">Screen: ${NVTheme.picker()}</div>` : ''}
 
       <p class="small muted" style="text-align:center">${esc(c.name || '')}${c.phone ? ' · ' + esc(c.phone) : ''}${c.email ? ' · ' + esc(c.email) : ''}</p>
     </div>`;

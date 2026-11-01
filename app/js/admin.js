@@ -44,6 +44,7 @@ function settingsCompany(box, d) {
       .map((z) => `<option value="${z}" ${z === (s.timezone || '') ? 'selected' : ''}>${z ? z.replace('America/', '').replace('Pacific/', '').replace('_', ' ') : 'Server time'}</option>`).join('')}</select>
       <div class="hint">When your day starts and ends, and the times printed on service records.</div></div>
     <div class="field"><label>Message on the customer pay page</label><textarea name="portal_message">${esc(s.portal_message || '')}</textarea></div>
+    ${NV.spanishField('portal_message_es', 'portal_message', { value: s.portal_message_es, rows: 2, maxlength: 2000, what: 'a message at the top of the customer\'s account page' })}
     <button class="btn primary">Save company info</button>
   </form>
   <form class="card" id="security" style="max-width:720px">
@@ -122,14 +123,14 @@ async function settingsLicenses(box) {
   const byUser = (id) => d.licenses.filter((l) => l.user_id === id);
   const techs = d.people.filter((u) => u.runs_routes || byUser(u.id).length);
   const due = d.licenses.filter((l) => l.status !== 'current');
-  const left = (l) => (l.days_left == null ? 'No expiration' : l.days_left < 0 ? `Expired ${fmtDate(l.expires_on)}` : `Expires ${fmtDate(l.expires_on)} (${l.days_left} days)`);
+  const left = (l) => (l.days_left == null ? 'No expiration' : l.days_left < 0 ? `Expired ${fmtDate(l.expires_on)}` : `Expires ${fmtDate(l.expires_on)} (${plural(l.days_left, 'day')})`);
   const ceu = (l) => (l.ceu_required ? `<div class="small ${l.ceu_short ? '' : 'muted'}">${l.ceu_earned} of ${l.ceu_required} CEUs${l.ceu_short ? ` · <b>${l.ceu_short} to go</b>` : ' ✓'}</div>` : '');
   box.innerHTML = `
     ${d.atRisk.length ? `<div class="alert warn"><span><b>${d.atRisk.length} restricted stop${d.atRisk.length === 1 ? '' : 's'} in the next 90 days</b> are assigned to a tech who won't be licensed that day. Renew the license or move the stop.</span></div>
       <div class="card"><h2>Stops at risk</h2><div class="table-wrap"><table class="list"><thead><tr><th>Date</th><th>Customer</th><th>Service</th><th>Problem</th></tr></thead><tbody>
       ${d.atRisk.map((v) => `<tr><td class="nowrap">${fmtDate(v.date)}</td><td><a href="#/customers/${v.customer_id}">${esc([v.first_name, v.last_name].filter(Boolean).join(' ') || v.company || 'Customer')}</a><div class="small muted">${esc(v.address || '')}</div></td>
         <td class="small">${esc(v.service)}</td><td class="small">${esc(v.problem)}</td></tr>`).join('')}</tbody></table></div></div>` : ''}
-    ${due.length ? `<div class="alert ${due.some((l) => l.status === 'expired') ? 'err' : 'warn'}"><span>${due.map((l) => `<b>${esc(l.name)}</b>: ${esc(l.category)} ${l.status === 'expired' ? 'expired' : `expires in ${l.days_left} days`}`).join(' · ')}</span></div>` : ''}
+    ${due.length ? `<div class="alert ${due.some((l) => l.status === 'expired') ? 'err' : 'warn'}"><span>${due.map((l) => `<b>${esc(l.name)}</b>: ${esc(l.category)} ${l.status === 'expired' ? 'expired' : `expires in ${plural(l.days_left, 'day')}`}`).join(' · ')}</span></div>` : ''}
     <div class="card">
       <div class="card-head"><div><h2>Licenses</h2><div class="small muted">${d.restricted.length ? `Restricted services: ${d.restricted.map((s) => `${esc(s.name)} (${esc(s.required_license)})`).join(', ')}.` : 'Mark a service as restricted under Services to keep unlicensed techs off it.'} Techs and their managers get a reminder 60, 30 and 7 days before a license expires.</div></div>
         <button class="btn sm primary" id="add-lic">+ Add license</button></div>
@@ -212,9 +213,11 @@ function settingsServices(box, d) {
   const svcModal = (t = { active: 1, duration_min: 30, default_frequency: 'quarterly', customer_type: 'both' }) => {
     const m = modal(t.id ? `Edit ${t.name}` : 'Add a service', `
       <div class="field"><label>Name</label><input name="name" value="${esc(t.name || '')}" placeholder="General Pest - Quarterly"></div>
+      ${NV.spanishField('name_es', 'name', { value: t.name_es, maxlength: 200, label: 'Name in Spanish (optional)', placeholder: 'Control general de plagas - Trimestral', what: 'the name of a pest control service' })}
       <div class="row"><div class="field"><label>Category</label><select name="category">${SERVICE_CATEGORIES.map((c) => `<option ${c === t.category ? 'selected' : ''}>${c}</option>`).join('')}</select></div>
       <div class="field"><label>Sold to</label><select name="customer_type">${[['both', 'Homes and businesses'], ['residential', 'Homes only'], ['commercial', 'Businesses only']].map(([v, l]) => `<option value="${v}" ${t.customer_type === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div></div>
       <div class="field"><label>What's included (customers see this)</label><input name="description" value="${esc(t.description || '')}" placeholder="Exterior perimeter spray, eaves sweep, interior on request"></div>
+      ${NV.spanishField('description_es', 'description', { value: t.description_es, maxlength: 500, label: "What's included, in Spanish (optional)", placeholder: 'Rociado del perímetro exterior, aleros, interior si lo pide', what: 'what a pest control service includes' })}
       <div class="row"><div class="field"><label>Normal price</label><input name="default_price" type="number" step="0.01" value="${t.default_price ?? ''}"></div>
       <div class="field"><label>Lowest price allowed</label><input name="min_price" type="number" step="0.01" value="${t.min_price ?? ''}" placeholder="No limit"><div class="hint">Enforced when the "price floor" rule is on.</div></div></div>
       <div class="row"><div class="field"><label>Usually sold</label><select name="default_frequency">${Object.entries(FREQ).map(([k, v]) => `<option value="${k}" ${t.default_frequency === k ? 'selected' : ''}>${v}</option>`).join('')}</select></div>
@@ -301,10 +304,10 @@ function settingsBranches(box, d) {
     <div class="field"><label>Only these zips (optional)</label><input name="zips" placeholder="Blank = every customer in this branch"></div>`,
   [{ label: 'Cancel' }, { label: 'Move', cls: 'primary', onClick: async (el) => {
     const r = await api(`/nuvolve/app/api/locations/${b.dataset.move}/move-customers`, { body: formData(el) });
-    toast(`${r.moved} customers moved`); route();
+    toast(`${plural(r.moved, 'customer')} moved`); route();
   } }])));
   $('#reassign').onclick = () => modal('Re-sort customers by service area?', '<p>Every customer is checked against the branch zips and radius and moved to the branch that covers them. Customers outside every area go to the main branch.</p>', [
-    { label: 'Cancel' }, { label: 'Re-sort', cls: 'primary', onClick: async () => { const r = await api('/nuvolve/app/api/locations/reassign', { method: 'POST' }); toast(`${r.moved} customers moved`); route(); } }]);
+    { label: 'Cancel' }, { label: 'Re-sort', cls: 'primary', onClick: async () => { const r = await api('/nuvolve/app/api/locations/reassign', { method: 'POST' }); toast(`${plural(r.moved, 'customer')} moved`); route(); } }]);
 }
 
 function settingsRules(box, d) {
@@ -361,6 +364,7 @@ function settingsSales(box, d) {
         <div class="field" style="margin-top:8px"><label>Link to share</label><div class="copy-row"><input readonly value="${esc(link)}"><button type="button" class="btn sm" data-copy="link">Copy</button><a class="btn sm" href="${esc(link)}" target="_blank" rel="noopener">Open</a></div></div>
         <div class="field"><label>Put it on your website (paste into your site builder)</label><textarea readonly rows="3" class="mono">${esc(embed)}</textarea><button type="button" class="btn sm" data-copy="embed">Copy code</button></div>
         <div class="field"><label>Message at the top of the form</label><textarea name="booking_message" placeholder="Tell us what's bugging you and we'll call within 1 business hour.">${esc(s.booking_message || '')}</textarea></div>
+        ${NV.spanishField('booking_message_es', 'booking_message', { value: s.booking_message_es, rows: 2, maxlength: 2000, what: 'the message at the top of a booking form on the company website' })}
         <div class="actions"><button class="btn primary">Save</button><button type="button" class="btn" id="new-key">Make a new link</button></div>
         <div class="hint">A new link stops the old one from working (use it if spam starts coming in).</div>`
     : '<button type="button" class="btn primary" id="new-key">Turn on online booking</button>'}
@@ -370,6 +374,9 @@ function settingsSales(box, d) {
       <p class="small muted">Customers read these terms and sign on their phone. The signed copy is saved with their name, signature, time and a tamper check. Have your attorney look over the wording for your state.</p>
       <div class="field"><label>Estimates are good for (days)</label><input name="estimate_valid_days" type="number" min="1" max="365" value="${esc(s.estimate_valid_days || '30')}"></div>
       <div class="field"><label>Agreement terms</label><textarea name="agreement_terms" rows="14">${esc(s.agreement_terms || d.defaultTerms)}</textarea></div>
+      ${NV.spanishField('agreement_terms_es', 'agreement_terms', { value: s.agreement_terms_es, rows: 8, maxlength: 20000, label: 'Agreement terms in Spanish (optional)',
+        placeholder: 'Customers whose language is Spanish read and sign these. Leave blank to have them sign the English.', what: 'the terms of a pest control service agreement the customer signs' })}
+      <div class="hint">Have the Spanish checked too: a customer signs the version in their language.</div>
       <div class="actions"><button class="btn primary">Save</button><button type="button" class="btn" id="reset-terms">Use the standard wording</button></div>
       <div class="hint">Changes apply to estimates sent from now on. Ones already sent keep the wording the customer saw. Turn on the rule "Signed service agreement required" under Rules to make every new recurring customer sign first.</div>
     </form></div>`;
@@ -380,7 +387,11 @@ function settingsSales(box, d) {
   };
   if ($('#booking [name=booking_message]')) $('#booking').onsubmit = async (e) => {
     e.preventDefault();
-    try { await api('/nuvolve/app/api/settings', { method: 'PUT', body: { booking_enabled: e.target.booking_enabled.checked ? '1' : '0', booking_message: e.target.booking_message.value } }); await refreshBoot(); toast('Saved'); } catch (err) { toast(err.message, true); }
+    try {
+      await api('/nuvolve/app/api/settings', { method: 'PUT', body: { booking_enabled: e.target.booking_enabled.checked ? '1' : '0', booking_message: e.target.booking_message.value,
+        booking_message_es: e.target.booking_message_es.value } });
+      await refreshBoot(); toast('Saved');
+    } catch (err) { toast(err.message, true); }
   };
   $('#reset-terms').onclick = () => { $('#agreement [name=agreement_terms]').value = d.defaultTerms; };
   $('#agreement').onsubmit = async (e) => {
@@ -529,7 +540,7 @@ function settingsData(box, d) {
     if (!file) return toast('Pick a CSV file first', true);
     try {
       const r = await api(`/nuvolve/app/api/import/customers?location_id=${$('#csv-loc')?.value || ''}`, { body: { csv: await file.text() } });
-      toast(`Imported ${r.created} customers${r.plans ? ` and ${r.plans} service plans` : ''}.`);
+      toast(`Imported ${plural(r.created, 'customer')}${r.plans ? ` and ${r.plans} service plans` : ''}.`);
     } catch (err) { toast(err.message, true); }
   };
 }
@@ -675,16 +686,16 @@ async function pageInsights(view, _id, params = {}) {
       <div class="actions"><select id="period">${[['month', 'This month'], ['last_month', 'Last month'], ['30', 'Last 30 days'], ['90', 'Last 90 days'], ['year', 'This year'], ['12m', 'Last 12 months']].map(([v, l]) => `<option value="${v}" ${v === period ? 'selected' : ''}>${l}</option>`).join('')}</select></div></div>
 
     <div class="stats">
-      <div class="stat"><div class="label">Recurring revenue, yearly</div><div class="value">${money(k.recurringValue)}</div><div class="sub">${k.recurringAccounts} accounts on a plan</div></div>
-      <div class="stat"><div class="label">Billed</div><div class="value">${money(k.billed)}</div><div class="sub">${k.invoices} invoices · avg ${money(k.avgTicket)}</div></div>
+      <div class="stat"><div class="label">Recurring revenue, yearly</div><div class="value">${money(k.recurringValue)}</div><div class="sub">${plural(k.recurringAccounts, 'account')} on a plan</div></div>
+      <div class="stat"><div class="label">Billed</div><div class="value">${money(k.billed)}</div><div class="sub">${plural(k.invoices, 'invoice')} · avg ${money(k.avgTicket)}</div></div>
       <div class="stat"><div class="label">Collected</div><div class="value">${money(k.collected)}</div><div class="sub">+ ${money(k.tips)} tips to techs</div></div>
-      <div class="stat ${k.pastDue > 0 ? 'warn' : ''}"><div class="label">Owed to you</div><div class="value">${money(k.openAR)}</div><div class="sub">${money(k.pastDue)} past due · ${k.pastDueAccounts} accounts</div></div>
+      <div class="stat ${k.pastDue > 0 ? 'warn' : ''}"><div class="label">Owed to you</div><div class="value">${money(k.openAR)}</div><div class="sub">${money(k.pastDue)} past due · ${plural(k.pastDueAccounts, 'account')}</div></div>
     </div>
     <div class="stats">
       <div class="stat"><div class="label">Active accounts</div><div class="value">${k.activeAccounts}</div><div class="sub">🏠 ${k.residential} residential · 🏢 ${k.commercial} commercial</div></div>
       <div class="stat"><div class="label">Paid up</div><div class="value">${pct(k.paidUp, k.activeAccounts)}%</div><div class="sub">${k.paidUp} paid up · ${k.owing} owe something</div></div>
-      <div class="stat"><div class="label">Serviced in period</div><div class="value">${k.accountsServiced}</div><div class="sub">${k.stops} stops completed</div></div>
-      <div class="stat"><div class="label">Won / lost</div><div class="value">+${k.added} / −${k.lost}</div><div class="sub">Next 30 days: ${k.next30.stops} stops, ${money(k.next30.value)}</div></div>
+      <div class="stat"><div class="label">Serviced in period</div><div class="value">${k.accountsServiced}</div><div class="sub">${plural(k.stops, 'stop')} completed</div></div>
+      <div class="stat"><div class="label">Won / lost</div><div class="value">+${k.added} / −${k.lost}</div><div class="sub">Next 30 days: ${plural(k.next30.stops, 'stop')}, ${money(k.next30.value)}</div></div>
     </div>
 
     <div class="card">
@@ -795,13 +806,13 @@ async function pageAcquisitions(view) {
     if (!hoPlan.stops.length) { box.innerHTML = `<p class="muted">${esc(hoPlan.tech.name)} has no accounts on their route right now.</p>`; return; }
     box.innerHTML = `<p><b>${hoPlan.stops.length}</b> accounts worth <b>${money(hoPlan.yearly)}</b>/yr move off ${esc(hoPlan.tech.name)}'s route.</p><div id="ho-rm"></div>
       <label class="check"><input type="checkbox" id="ho-stop"> Take ${esc(hoPlan.tech.name.split(' ')[0])} off the schedule afterwards (stops running routes)</label>
-      <div class="actions" style="justify-content:flex-end"><button class="btn primary" id="ho-apply">Move ${hoPlan.stops.length} accounts</button></div>`;
+      <div class="actions" style="justify-content:flex-end"><button class="btn primary" id="ho-apply">Move ${plural(hoPlan.stops.length, 'account')}</button></div>`;
     RouteMerge.render($('#ho-rm'), hoPlan, ho, hoShow);
-    $('#ho-apply').onclick = () => modal('Move these accounts?', `<p>Plans and upcoming visits for ${hoPlan.stops.length} accounts move to their new techs, and each tech gets a note. Visits already started today stay put.</p>`,
+    $('#ho-apply').onclick = () => modal('Move these accounts?', `<p>Plans and upcoming visits for ${plural(hoPlan.stops.length, 'account')} move to their new techs, and each tech gets a note. Visits already started today stay put.</p>`,
       [{ label: 'Cancel' }, { label: 'Move them', cls: 'primary', onClick: async () => {
         try {
           const r = await api('/nuvolve/app/api/routes/handoff', { body: { ...hoBody(), apply: true, stop_routes: $('#ho-stop').checked } });
-          toast(`Moved ${r.moved} accounts: ${r.by_tech.map((t) => `${t.name} ${t.stops}`).join(', ')}`);
+          toast(`Moved ${plural(r.moved, 'account')}: ${r.by_tech.map((t) => `${t.name} ${t.stops}`).join(', ')}`);
           ho.overrides = {};
           await refreshBoot(); route();
         } catch (err) { toast(err.message, true); }
@@ -822,7 +833,7 @@ async function pageAcquisitions(view) {
       ${p.alreadyImported ? `<div class="alert warn">This exact package was already imported on ${fmtDate(p.alreadyImported.created_at)}. Undo that import first to bring it in again.</div>` : ''}
       <div class="stats">
         <div class="stat"><div class="label">Accounts</div><div class="value">${c.customers}</div><div class="sub">${c.activeCustomers} active · ${c.commercial} commercial</div></div>
-        <div class="stat"><div class="label">Recurring revenue, yearly</div><div class="value">${money(c.recurringValue)}</div><div class="sub">${c.activePlans} active plans${c.signedAgreements ? ` · ${c.signedAgreements} signed agreements` : ''}${c.termiteContracts ? ` · ${c.termiteContracts} termite warranties` : ''}${c.stations ? ` · ${c.stations} stations` : ''}</div></div>
+        <div class="stat"><div class="label">Recurring revenue, yearly</div><div class="value">${money(c.recurringValue)}</div><div class="sub">${c.activePlans} active plans${c.signedAgreements ? ` · ${c.signedAgreements} signed agreements` : ''}${c.termiteContracts ? ` · ${c.termiteContracts} termite warranties` : ''}${c.stations ? ` · ${plural(c.stations, 'station')}` : ''}</div></div>
         <div class="stat"><div class="label">Schedule coming over</div><div class="value">${c.upcomingVisits}</div><div class="sub">upcoming visits · ${c.pastVisits} past visits of history</div></div>
         <div class="stat ${c.openBalance > 0 ? 'warn' : ''}"><div class="label">Open balances</div><div class="value">${money(c.openBalance)}</div><div class="sub">${c.cardsOnFile} cards on file (customers re-enter for autopay)</div></div>
       </div>
@@ -851,7 +862,7 @@ async function pageAcquisitions(view) {
         <div id="rm-branches" class="small muted" style="margin:8px 0"></div>
         <div id="rm-plan"></div>
       </div>
-      <div class="actions" style="margin-top:14px;justify-content:flex-end"><button class="btn primary big" id="commit" ${p.alreadyImported ? 'disabled' : ''}>Import ${c.customers} accounts</button></div>
+      <div class="actions" style="margin-top:14px;justify-content:flex-end"><button class="btn primary big" id="commit" ${p.alreadyImported ? 'disabled' : ''}>Import ${plural(c.customers, 'account')}</button></div>
     </div>`;
     const rm = { overrides: {} };
     const routeChoices = () => {
@@ -909,7 +920,7 @@ async function pageAcquisitions(view) {
         const rt = r.counts.routes;
         modal('Welcome aboard 🎉', `<p><b>${r.counts.added}</b> new accounts and <b>${r.counts.merged}</b> merged into existing ones.</p>
           ${rt ? `<p class="small"><b>Routes:</b> ${rt.by_tech.map((t) => `${esc(t.name)} ${t.stops}`).join(', ')}.${rt.unassigned ? ` ${rt.unassigned} still need a tech.` : ''} Each of your techs got a note about their new accounts.${rt.history_only_techs ? ` ${rt.history_only_techs} seller tech${rt.history_only_techs === 1 ? ' is' : 's are'} kept switched off so their past visits still show who did them.` : ''}</p>` : ''}
-          <p class="small">${r.counts.plans} plans, ${r.counts.visits} visits (${r.counts.futureVisits} upcoming), ${r.counts.invoices} invoices${r.counts.agreements ? `, ${r.counts.agreements} signed agreements` : ''}${r.counts.termiteContracts ? `, ${r.counts.termiteContracts} termite warranties (auto-renew off until a card is on file)` : ''}${r.counts.devices ? `, ${r.counts.devices} stations` : ''}. ${r.counts.new_techs ? `${r.counts.new_techs} techs added.` : ''} ${r.counts.new_services ? `${r.counts.new_services} services added.` : ''}</p>`,
+          <p class="small">${plural(r.counts.plans, 'plan')}, ${plural(r.counts.visits, 'visit')} (${r.counts.futureVisits} upcoming), ${plural(r.counts.invoices, 'invoice')}${r.counts.agreements ? `, ${r.counts.agreements} signed agreements` : ''}${r.counts.termiteContracts ? `, ${r.counts.termiteContracts} termite warranties (auto-renew off until a card is on file)` : ''}${r.counts.devices ? `, ${plural(r.counts.devices, 'station')}` : ''}. ${r.counts.new_techs ? `${plural(r.counts.new_techs, 'tech')} added.` : ''} ${r.counts.new_services ? `${r.counts.new_services} services added.` : ''}</p>`,
         [{ label: 'See the customers', cls: 'primary', onClick: () => { location.hash = '#/customers'; } }]);
       } catch (err) { toast(err.message, true); e.target.disabled = false; }
     };

@@ -19,13 +19,13 @@ async function load() {
   }
   await NV.useLang(NV.preferredLang(R.lang));
   document.title = t('How did we do?');
-  if (R.rating) return happy(R.rating) ? showThanks(R.google) : showImprove(true, R.google);
+  if (R.rating) return happy(R.rating) ? showThanks(R.google) : R.ask_active ? showStill(true, R.google) : showImprove(true, R.google);
   const day = parseYmd(R.date).toLocaleDateString(NV.lang === 'es' ? 'es-US' : 'en-US', { month: 'long', day: 'numeric' });
   app.innerHTML = `
     <div class="muted">${esc(R.company || '')}</div>
     <h1 style="margin-top:6px">${esc(t('How did {tech} do?', { tech: R.tech_name }))}</h1>
     <p class="muted">${esc(t('{service} on {date}', { service: R.service_name || t('Your service'), date: day }))}</p>
-    <div class="stars">${[1, 2, 3, 4, 5].map((n) => `<button data-n="${n}" aria-label="${esc(t('{n} stars', { n }))}">⭐</button>`).join('')}</div>
+    <div class="stars">${[1, 2, 3, 4, 5].map((n) => `<button data-n="${n}" aria-label="${esc(NV.tn(n, '{n} star', '{n} stars'))}">⭐</button>`).join('')}</div>
     <p class="small muted">${esc(t('Tap a star'))}</p>`;
   const btns = [...app.querySelectorAll('.stars button')];
   btns.forEach((b) => {
@@ -35,7 +35,7 @@ async function load() {
       let r;
       try { r = await api(`/nuvolve/app/api/review/${token}/rate`, { body: { rating: Number(b.dataset.n) } }); } catch (e) { return toast(t(e.message), true); }
       R.rating = r.rating;
-      setTimeout(() => (happy(r.rating) ? showThanks(r.google) : showImprove(false, r.google)), 250);
+      setTimeout(() => (happy(r.rating) ? showThanks(r.google) : r.ask_active ? showStill(false, r.google) : showImprove(false, r.google)), 250);
     };
   });
 }
@@ -60,6 +60,31 @@ function showImprove(already, askGoogle) {
     <button class="btn primary big block" id="send">${esc(t('Send anonymously'))}</button>
     ${askGoogle ? googleLink(true) : ''}`;
   wireFeedback(askGoogle);
+}
+
+// After a low rating: are the pests still there? A yes goes to the office as a re-service request (free inside the
+// re-treat window), which is not anonymous, so the page says so. Then the anonymous feedback box as before.
+function showStill(already, askGoogle) {
+  app.innerHTML = `
+    <h1>${esc(t(already ? 'Thanks for your rating' : 'Thanks for telling us'))}</h1>
+    <p><b>${esc(t('Are you still seeing pests?'))}</b></p>
+    <p class="small muted">${esc(t('If you say yes, we will send someone back. The office will see your name so they can book it.'))}</p>
+    <div class="field"><textarea id="where" placeholder="${esc(t('Where are you seeing them? (optional)'))}"></textarea></div>
+    <button class="btn primary big block" id="yes">${esc(t('Yes, please come back'))}</button>
+    <button class="btn block" id="no" style="margin-top:8px">${esc(t('No'))}</button>`;
+  const answer = async (active) => {
+    let r;
+    try { r = await api(`/nuvolve/app/api/review/${token}/still-active`, { body: { active, note: document.getElementById('where').value } }); } catch (e) { return toast(t(e.message), true); }
+    R.ask_active = false;
+    if (!active) return showImprove(already, askGoogle);
+    app.innerHTML = `<div style="font-size:44px">🔁</div><h1>${esc(t('We are on it'))}</h1>
+      <p>${esc(t(r.callback ? 'The office will call or text you to set a day. This trip back is free.' : 'The office will call or text you to set a day.'))}</p>
+      <p class="small muted" style="margin-top:18px">${esc(t('Anything else we could do better? (optional, anonymous)'))}</p>
+      <div class="field"><textarea id="c"></textarea></div><button class="btn block" id="send">${esc(t('Send anonymously'))}</button>${askGoogle ? googleLink(true) : ''}`;
+    wireFeedback(askGoogle);
+  };
+  document.getElementById('yes').onclick = () => answer(true);
+  document.getElementById('no').onclick = () => answer(false);
 }
 
 function wireFeedback(askGoogle) {
