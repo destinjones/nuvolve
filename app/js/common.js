@@ -3,6 +3,24 @@
 // The branch picked in the top bar rides along on every request.
 const currentBranch = () => { try { return localStorage.getItem('nv_loc') || ''; } catch { return ''; } };
 
+// A customer link that ran out (src/features/access-links.js): offer a fresh one, sent to the contact on file.
+// kind is 'portal' or 'sign'; `box` is the page's root element.
+function expiredLink(box, kind, token, message) {
+  const tt = (s, v) => (typeof NV !== 'undefined' && NV.t ? NV.t(s, v) : s.replace(/\{(\w+)\}/g, (_, k) => (v && v[k] != null ? v[k] : '')));
+  box.innerHTML = `<div class="wrap" style="margin-top:40px"><div class="card"><h2>${esc(tt('This link has expired'))}</h2>
+    <p>${esc(tt(message || 'Links expire after a while to keep your account safe.'))}</p>
+    <button class="btn primary big block" id="nv-fresh">${esc(tt('Send me a fresh link'))}</button>
+    <p class="small muted" id="nv-fresh-note" style="margin-top:10px">${esc(tt('It goes to the email or phone we have on file, not to this device.'))}</p></div></div>`;
+  const b = box.querySelector('#nv-fresh');
+  b.onclick = async () => {
+    b.disabled = true;
+    try {
+      const r = await api(`/nuvolve/app/api/${kind}/${token}/resend`, { body: {} });
+      box.querySelector('#nv-fresh-note').textContent = r.sentTo?.length ? tt('Sent to {to}. Open the newest message.', { to: r.sentTo.join(', ') }) : tt('Sent. Open the newest message.');
+    } catch (e) { box.querySelector('#nv-fresh-note').textContent = tt(e.message); b.disabled = false; }
+  };
+}
+
 async function api(path, opts = {}) {
   const headers = { ...(opts.body ? { 'Content-Type': 'application/json' } : {}), ...opts.headers };
   if (currentBranch()) headers['X-Location'] = currentBranch();
@@ -19,6 +37,8 @@ async function api(path, opts = {}) {
   if (!res.ok) {
     // A company rule blocked this. Show what is missing; owners and admins can override.
     if (res.status === 422 && data?.rules && !opts.noRuleModal) return ruleBlocked(path, opts, data);
+    // A protected action (src/features/reauth.js): type the password, then the same request goes again.
+    if (res.status === 403 && data?.reauth && !opts.noReauth) { await askPassword(); return api(path, { ...opts, noReauth: true }); }
     // The company requires two-factor login and this person hasn't set it up yet.
     if (res.status === 403 && data?.setup2fa && typeof pageAccount === 'function' && location.hash !== '#/account') location.hash = '#/account';
     const err = new Error(data?.error || 'Something went wrong');
@@ -29,6 +49,46 @@ async function api(path, opts = {}) {
     throw err;
   }
   return data;
+}
+
+// Asks for the password before a protected action (src/features/reauth.js). Resolves once the server has it; rejects
+// (quietly) if the person closes the window.
+function askPassword() {
+  return new Promise((resolve, reject) => {
+    let done = false;
+    const m = modal('Confirm it\'s you', `<p>This one can't be taken back, so type your password again. You won't be asked again for 15 minutes.</p>
+      <div class="field"><label>Password</label><input id="nv-reauth-pw" type="password" autocomplete="current-password"></div>
+      <p class="small" id="nv-reauth-err" style="color:var(--danger, #c53030)"></p>`,
+    [{ label: 'Cancel' },
+      { label: 'Continue', cls: 'primary', onClick: async (el) => {
+        try {
+          await api('/nuvolve/app/api/me/reauth', { body: { password: $('#nv-reauth-pw', el).value }, noReauth: true });
+          done = true; resolve(); return true;
+        } catch (e) { $('#nv-reauth-err', el).textContent = e.message; return false; }
+      } }]);
+    const pw = $('#nv-reauth-pw', m.el);
+    if (pw) pw.addEventListener('keydown', (e) => { if (e.key === 'Enter') m.el.querySelector('.btn.primary')?.click(); });
+    // Closed any other way (Cancel, Escape, a click outside): the action doesn't happen.
+    const watch = new MutationObserver(() => {
+      if (m.el.isConnected) return;
+      watch.disconnect();
+      if (!done) reject(Object.assign(new Error('Not confirmed, so nothing was done.'), { status: 403, quiet: true }));
+    });
+    watch.observe(document.body, { childList: true });
+  });
+}
+// Downloads behind a plain link (exports): check first, ask for the password if needed, then follow the link.
+async function freshThen(go) {
+  try { const r = await api('/nuvolve/app/api/me/reauth'); if (!r.fresh) await askPassword(); } catch (e) { if (e.status === 403) return; }
+  go();
+}
+if (typeof document !== 'undefined') {
+  document.addEventListener('click', (e) => {
+    const a = e.target.closest && e.target.closest('a[href="/nuvolve/app/api/export/customers"], a[href="/nuvolve/app/api/export/everything"], a[href="/nuvolve/app/api/merge/export"]');
+    if (!a || a.dataset.nvFresh) return;
+    e.preventDefault();
+    freshThen(() => { location.href = a.getAttribute('href'); });
+  });
 }
 
 // A save that must not be lost in a dead zone. The tech app keeps it on the phone until there's signal
@@ -533,6 +593,40 @@ function wireHomePhotos(root = document) {
       if (tag) tag.textContent = 'Aerial';
     } else img.parentNode.classList.add('none');
   }));
+}
+
+// The front of the house as it looks from the street in Google Maps, big, in a popup. Street View when the server has
+// a Google key and Google has a picture there; otherwise (or on the Aerial tab) the photo from above.
+function houseFrontUrl(p, w = 640, h = 400) {
+  return typeof BOOT !== 'undefined' && BOOT?.streetView ? `/nuvolve/app/api/sales/street-view?lat=${p.lat}&lng=${p.lng}&w=${w}&h=${h}` : '';
+}
+function openHousePhoto(p) {
+  if (p?.lat == null || p?.lng == null) return;
+  const front = houseFrontUrl(p, 640, 427);
+  const aerial = housePhoto(p, 960, 640);
+  const addr = [p.address, p.city, [p.state, p.zip].filter(Boolean).join(' ')].filter(Boolean).join(', ');
+  const m = modal(addr || 'The house', `
+    <div class="house-pop">
+      <div class="house-pop-img"><img alt="${esc(addr ? `Front of ${addr}` : 'Front of the house')}" src="${front || aerial}">
+        <div class="house-pop-none hidden">Google has no street photo of this house yet.<br><span class="small">Showing the photo from above.</span></div></div>
+      <div class="actions" style="margin-top:10px;justify-content:space-between">
+        <div class="seg">${front ? '<button class="btn sm primary" data-v="front">🏠 Front of house</button>' : ''}<button class="btn sm${front ? '' : ' primary'}" data-v="aerial">🛰️ From above</button></div>
+        <a class="btn sm" target="_blank" rel="noopener" href="https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${p.lat},${p.lng}">Walk around in Street View ↗</a>
+      </div>
+      ${front ? '' : '<p class="small muted" style="margin:8px 0 0">Add a Google Maps key in hosting settings (GOOGLE_MAPS_API_KEY) to see the front of the house here.</p>'}
+    </div>`);
+  $('.modal', m.el).classList.add('house-modal');
+  const img = $('.house-pop img', m.el);
+  const none = $('.house-pop-none', m.el);
+  const show = (v) => {
+    $$('.seg .btn', m.el).forEach((b) => b.classList.toggle('primary', b.dataset.v === v));
+    none.classList.add('hidden');
+    img.src = v === 'front' && front ? front : aerial;
+  };
+  // No Street View here: say so and show the aerial photo.
+  img.onerror = () => { if (img.src !== aerial && !img.src.endsWith(aerial)) { img.src = aerial; none.classList.remove('hidden'); $$('.seg .btn', m.el).forEach((b) => b.classList.toggle('primary', b.dataset.v === 'aerial')); } };
+  $$('.seg .btn', m.el).forEach((b) => (b.onclick = () => show(b.dataset.v)));
+  return m;
 }
 
 // Address type-ahead: fills street, city, state, zip, and map pin from one box.

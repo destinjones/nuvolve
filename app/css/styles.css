@@ -150,7 +150,13 @@ label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 4px; c
 input, select, textarea {
   width: 100%; padding: 10px 12px; border: 1px solid #cbd5e0; border-radius: 8px; font: inherit; background: var(--field); color: var(--ink);
 }
-input:focus, select:focus, textarea:focus { outline: 2px solid #9ae6b4; border-color: var(--brand); }
+input:focus, select:focus, textarea:focus { outline: 2px solid var(--brand); outline-offset: 1px; border-color: var(--brand); }
+/* Keyboard focus that shows in bright sun and on the dark sidebar alike: a dark blue ring with a white halo. */
+:focus-visible { outline: 3px solid #1d4ed8; outline-offset: 2px; }
+a:focus-visible, button:focus-visible, .btn:focus-visible, [role="button"]:focus-visible, [tabindex]:focus-visible { box-shadow: 0 0 0 5px #fff; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
+}
 textarea { min-height: 80px; resize: vertical; }
 .field { margin-bottom: 14px; }
 .row { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
@@ -270,6 +276,12 @@ textarea { min-height: 80px; resize: vertical; }
 .home-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .home-thumb.none img { display: none; }
 .home-thumb.none::after { content: '🏠'; display: grid; place-items: center; height: 100%; font-size: 22px; }
+.hero-zoom { position: absolute; right: 8px; bottom: 8px; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; color: #fff; background: rgba(0, 0, 0, .55); pointer-events: none; }
+.modal.house-modal { max-width: 900px; }
+.house-pop-img { position: relative; border-radius: 8px; overflow: hidden; background: #dfe7e2; aspect-ratio: 3 / 2; }
+.house-pop-img img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.house-pop-none { position: absolute; left: 0; right: 0; bottom: 0; padding: 8px 12px; background: rgba(0, 0, 0, .6); color: #fff; font-size: 14px; }
+.house-pop .seg { display: flex; gap: 6px; }
 .hero-type { position: absolute; left: 8px; top: 8px; padding: 4px 10px; border-radius: 20px; font-size: 13px; font-weight: 600; color: #fff; }
 .hero-type.res { background: rgba(39, 103, 73, .92); }
 .hero-type.comm { background: rgba(43, 108, 176, .92); }
@@ -463,3 +475,35 @@ code.key { display: inline-block; margin-top: 6px; padding: 6px 10px; background
 .rm-bad { color: var(--danger); font-size: 12px; }
 .rm-techs select { width: 100%; max-width: 360px; }
 @media (max-width: 640px) { .rm-map { height: 260px; } .rm-table select { max-width: 140px; } }
+
+/* ---------- printing and save as PDF ----------
+   Any office page prints as a clean document: no sidebar, search, buttons, toasts or maps' zoom controls; white paper
+   in either theme; tables and cards kept whole where they fit, headers repeated on long tables. "Shift+P" or the
+   button in the shortcuts list (press "?") opens the print dialog, which saves a PDF. */
+@media print {
+  @page { margin: 14mm 12mm; }
+  html, body { background: #fff !important; color: #000 !important; font-size: 12px; }
+  .shell { display: block; min-height: 0; }
+  .main { padding: 0 !important; max-width: none !important; width: auto !important; }
+  .sidebar, .search-bar, .search-results, .toast, .modal-back, .gps-badge, button, .btn, select, .leaflet-control-container, .no-print { display: none !important; }
+  .card, .stat { box-shadow: none !important; border: 1px solid #ccc !important; background: #fff !important; break-inside: avoid; page-break-inside: avoid; }
+  .stats, .grid { display: block !important; }
+  .stats .stat { display: inline-block; width: 31%; margin: 0 1% 8px 0; vertical-align: top; }
+  .table-wrap { overflow: visible !important; }
+  table { width: 100%; border-collapse: collapse; }
+  thead { display: table-header-group; }
+  tr { break-inside: avoid; page-break-inside: avoid; }
+  a { color: #000 !important; text-decoration: none !important; }
+  .page-head { border-bottom: 2px solid #000; margin-bottom: 10px; padding-bottom: 4px; }
+  .pill { border: 1px solid #999; background: #fff !important; color: #000 !important; }
+}
+
+/* The beta badge and Feedback button (public/js/features/beta-feedback.js) */
+.beta-badge { margin-left: auto; font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; padding: 2px 7px; border-radius: 999px; background: #f6c453; color: #3b2a00; text-decoration: none; align-self: flex-start; }
+.beta-fb { position: fixed; right: 16px; bottom: 16px; z-index: 40; box-shadow: 0 2px 10px rgba(0,0,0,.15); }
+@media (max-width: 860px) { .beta-fb { right: 12px; bottom: 84px; } }
+@media print { .beta-fb, .beta-badge { display: none; } }
+
+/* The location disclosure sits in the tech app's dark header, which colors its text white; the card keeps its own ink. */
+.card.gps-disc { color: var(--ink); }
+.card.gps-disc .muted { color: var(--muted, #4a5568); }

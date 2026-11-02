@@ -24,6 +24,9 @@ function fromNuvolve(rawBody, header, secret) {
 async function load() {
   const spec = await (await fetch('/nuvolve/app/api/v1/openapi.json')).json();
   const base = spec.servers[0].url;
+  const prm = (p) => (p.$ref ? spec.components.parameters[p.$ref.split('/').pop()] : p);
+  const versions = spec['x-api-versions'] || [];
+  const deps = spec['x-deprecations'] || [];
   const byTag = {};
   for (const [path, ops] of Object.entries(spec.paths)) for (const [verb, op] of Object.entries(ops)) (byTag[op.tags[0]] ||= []).push({ path, verb, op });
   document.getElementById('root').innerHTML = `
@@ -33,6 +36,11 @@ async function load() {
       <pre>curl ${esc(base)}/customers?limit=5 \\\n  -H "Authorization: Bearer nvk_..."</pre>
       <pre>curl -X POST ${esc(base)}/leads \\\n  -H "Authorization: Bearer nvk_..." -H "Content-Type: application/json" \\\n  -H "Idempotency-Key: form-8841" \\\n  -d '{"first_name":"Dana","phone":"214-555-0100","address":"12 Oak St","message":"Ants in the kitchen","source":"Website"}'</pre>
       <div class="desc">${md(spec.info.description)}</div></div>
+    <div class="card" id="policy"><h2>Versions and changes</h2>
+      <p>The current version is <code>${esc(spec.info.version)}</code>. Send <code>Nuvolve-Version</code> to pin one; leave it off for the newest. Breaking changes get a new dated version and at least 180 days' notice. <a href="/nuvolve/app/api/v1/meta">GET /nuvolve/app/api/v1/meta</a> lists all of this as JSON, no key needed.</p>
+      <table class="fields">${versions.map((v) => `<tr><td>${esc(v.version)}</td><td class="muted">released ${esc(v.released)}</td><td>${esc(v.notes)}</td></tr>`).join('')}</table>
+      <h3 id="deprecations">Deprecated</h3>
+      ${deps.length ? `<table class="fields">${deps.map((d) => `<tr><td>${esc(d.method)} ${esc(d.path)}</td><td class="muted">sunset ${esc(d.sunset)}</td><td>${esc(d.replacement ? `Use ${d.replacement}. ` : '')}${esc(d.note || '')}</td></tr>`).join('')}</table>` : '<p class="muted">Nothing is deprecated right now.</p>'}</div>
     <div class="card"><h2>Permissions</h2><table class="fields">${Object.entries(spec['x-scopes']).map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join('')}</table></div>
     <div class="card"><h2>Webhook events</h2><table class="fields">${Object.entries(spec['x-events']).map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(v.description)}</td><td class="muted">${esc(v.scope)}</td></tr>`).join('')}</table>
       <p>Check the signature on every delivery:</p><pre>${esc(VERIFY)}</pre></div>
@@ -44,7 +52,7 @@ async function load() {
         const res = okRes?.[1].content?.['application/json'].schema;
         return `<details class="ep"><summary><span class="verb ${verb}">${verb.toUpperCase()}</span><code>${esc(path)}</code><span>${esc(op.summary)}</span></summary>
           <div class="desc">${md(op.description)}</div>
-          ${op.parameters?.length ? `<h3>Parameters</h3><table class="fields">${op.parameters.map((p) => `<tr><td>${esc(p.name)}</td><td class="muted">${esc(p.in)} · ${esc(typeOf(p.schema))}</td><td>${esc(p.description || '')}</td></tr>`).join('')}</table>` : ''}
+          ${op.parameters?.length ? `<h3>Parameters</h3><table class="fields">${op.parameters.map(prm).map((p) => `<tr><td>${esc(p.name)}</td><td class="muted">${esc(p.in)} · ${esc(typeOf(p.schema))}</td><td>${esc(p.description || '')}</td></tr>`).join('')}</table>` : ''}
           ${body ? `<h3>Body</h3>${fieldTable(body, spec)}` : ''}
           ${res ? `<h3>Returns ${esc(okRes[0])}</h3>${res.properties?.data ? `<p class="small muted">A list of ${esc(typeOf(res.properties.data.items))}</p>${fieldTable(res.properties.data.items, spec)}` : fieldTable(res, spec)}` : ''}
         </details>`;

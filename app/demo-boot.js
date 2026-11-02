@@ -4,6 +4,7 @@
   var APP = '/nuvolve/app', SITE = '/nuvolve', TODAY = '2026-11-02', SIGNUP = '/nuvolve/#waitlist';
   // This copy of the app has no server, so it can't open an account. Its sign-up form would take six fields and
   // go nowhere; send people to the real sign-up (built with --live) or the waitlist instead.
+  window.NUVOLVE_SIGNUP_URL = SIGNUP;
   function noFakeSignup() { if (location.hash === '#signup') location.replace(SIGNUP); }
   noFakeSignup();
   window.addEventListener('hashchange', noFakeSignup);
@@ -73,18 +74,30 @@
       '#nv-demo.open .m{display:block}#nv-demo .m p{margin:0 0 8px;font-weight:400;color:#9fb5a8;line-height:1.4}' +
       '#nv-demo .m button,#nv-demo .m a{display:block;width:100%;text-align:left;background:none;border:0;color:#e6efe9;padding:7px 6px;border-radius:6px;cursor:pointer;font:inherit;text-decoration:none}' +
       '#nv-demo .m button:hover,#nv-demo .m a:hover{background:#17241e}' +
+      '#nv-demo button:focus-visible,#nv-demo a:focus-visible{outline:3px solid #fbd38d;outline-offset:2px}' +
       '#nv-demo .nvd-short{display:none}@media (max-width:640px){#nv-demo .nvd-long{display:none}#nv-demo .nvd-short{display:inline}}' +
       '@media (max-width:860px){#nv-demo{bottom:76px}}';
     document.head.appendChild(css);
     var el = document.createElement('div');
     el.id = 'nv-demo';
     el.innerHTML = '<div class="nvd-bar" role="status"><span class="nvd-msg">' + BAR + '</span><button type="button" class="nvd-reset">Reset demo</button></div>' +
-      '<button type="button" class="nvd-toggle" aria-expanded="false">DEMO ▾</button><div class="m"><p>Lone Star Pest Pros is a made-up company. Try anything: what you add or change is saved in this browser only.</p>' +
+      '<button type="button" class="nvd-toggle" aria-expanded="false" aria-controls="nvd-menu" aria-label="Demo menu: switch roles or go back to the site">DEMO ▾</button><div class="m" id="nvd-menu" role="group" aria-label="Demo menu"><p>Lone Star Pest Pros is a made-up company. Try anything: what you add or change is saved in this browser only.</p>' +
       ROLES.map(function (r) { return '<button type="button" data-as="' + r[0] + '">View as ' + r[1] + '</button>'; }).join('') +
       '<button type="button" data-as="portal">Customer pay page</button><a href="' + SITE + '">← Back to the Nuvolve site</a></div>';
     document.body.appendChild(el);
     var open = el.querySelector('.nvd-toggle');
-    open.onclick = function () { el.classList.toggle('open'); open.setAttribute('aria-expanded', el.classList.contains('open')); };
+    // A menu you can leave by keyboard: Escape closes it and puts you back on the button, tabbing or clicking
+    // away closes it, and opening it moves you to the first choice.
+    var setOpen = function (on, refocus) {
+      el.classList.toggle('open', on);
+      open.setAttribute('aria-expanded', on);
+      if (on) { var first = el.querySelector('.m button, .m a'); if (first) first.focus(); }
+      else if (refocus) open.focus();
+    };
+    open.onclick = function () { setOpen(!el.classList.contains('open')); };
+    el.addEventListener('keydown', function (e) { if (e.key === 'Escape' && el.classList.contains('open')) { e.preventDefault(); setOpen(false, true); } });
+    el.addEventListener('focusout', function (e) { if (el.classList.contains('open') && e.relatedTarget && !el.contains(e.relatedTarget)) setOpen(false); });
+    document.addEventListener('click', function (e) { if (el.classList.contains('open') && !el.contains(e.target)) setOpen(false); });
     el.querySelector('.nvd-reset').onclick = reset;
     el.querySelectorAll('[data-as]').forEach(function (b) { b.onclick = function () { as(b.getAttribute('data-as')); }; });
   }

@@ -18,6 +18,12 @@
 html, body { margin: 0; background: var(--bg); }
 body { font-size: 16px; line-height: 1.55; }
 a { color: var(--brand-dark); }
+/* Keyboard focus you can see in bright sun and on the dark header alike. */
+:focus-visible { outline: 3px solid #1d4ed8; outline-offset: 2px; box-shadow: 0 0 0 5px #fff; border-radius: 4px; }
+input:focus-visible { box-shadow: none; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
+}
 h1 { font-size: clamp(28px, 5vw, 40px); line-height: 1.15; margin: 0 0 12px; letter-spacing: -.01em; }
 h2 { font-size: 21px; margin: 0 0 10px; }
 h3 { font-size: 16px; margin: 0 0 6px; }
@@ -63,6 +69,9 @@ section > .muted { margin-bottom: 8px; }
 .price small { font-size: 18px; font-weight: 600; color: var(--muted); letter-spacing: 0; }
 .ticks { list-style: none; padding: 0; margin: 14px 0 0; }
 .ticks li { padding: 5px 0 5px 28px; position: relative; }
+.crosses { list-style: none; padding: 0; margin: 14px 0 0; }
+.crosses li { padding: 5px 0 5px 28px; position: relative; }
+.crosses li::before { content: "×"; position: absolute; left: 4px; top: 1px; font-size: 20px; line-height: 1.2; color: #9b2c2c; font-weight: 700; }
 .ticks li::before { content: ""; position: absolute; left: 4px; top: 11px; width: 12px; height: 7px; border-left: 2.5px solid var(--brand); border-bottom: 2.5px solid var(--brand); transform: rotate(-45deg); }
 .ticks.no li::before { width: 12px; height: 2.5px; border: 0; background: #a0aec0; transform: none; top: 15px; }
 
@@ -117,7 +126,7 @@ table.compare tbody th { font-weight: 600; width: 26%; }
 .form label { display: grid; gap: 4px; font-weight: 600; font-size: 14px; }
 .form input, .form select, .form textarea { font: inherit; font-weight: 400; padding: 10px 12px; border: 1px solid #cbd5e0; border-radius: 8px; background: #fff; color: var(--ink); width: 100%; }
 .form .row { display: grid; gap: 12px; grid-template-columns: 1fr 1fr; }
-.form .hp { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
+.hp, .form .hp { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
 .form-msg.ok { color: var(--brand-dark); font-weight: 600; }
 .form-msg.err { color: #c53030; font-weight: 600; }
 .inline-form { display: flex; gap: 8px; flex-wrap: wrap; max-width: 520px; }
@@ -134,7 +143,7 @@ table.compare tbody th { font-weight: 600; width: 26%; }
 
 /* status */
 .state-ok { color: var(--brand-dark); font-weight: 600; }
-.state-warn { color: #b7791f; font-weight: 600; }
+.state-warn { color: #8a5a00; font-weight: 600; }
 .state-bad { color: #c53030; font-weight: 600; }
 
 /* footer */
@@ -154,3 +163,29 @@ table.compare tbody th { font-weight: 600; width: 26%; }
 }
 .glossary dt { font-weight: 700; margin-top: 18px; font-size: 17px; }
 .glossary dd { margin: 4px 0 0; color: var(--muted); }
+
+/* the not-found page's finder */
+.find input[type=search] { display: block; width: 100%; margin: 8px 0 4px; padding: 11px 12px; font: inherit; border: 1px solid #b8c2cf; border-radius: 8px; background: #fff; }
+.find-list { list-style: none; padding: 0; margin: 8px 0 0; columns: 2 300px; column-gap: 28px; }
+.find-list li { break-inside: avoid; padding: 7px 0; border-bottom: 1px solid var(--line); }
+.find-list li a { display: block; font-weight: 600; }
+.find-list li span { display: block; }
+/* guides: who wrote it and when */
+.byline { margin: 2px 0 10px; }
+.byline b { color: var(--ink); }
+/* the free record template: the links show once the form is sent */
+.template-links { margin-top: 12px; }
+.template-links[hidden] { display: none; }
+/* status page */
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+#status-live .overall { font-size: 18px; font-weight: 600; }
+#status-live table th[scope=row] { text-transform: none; letter-spacing: 0; font-size: 15px; color: var(--ink); font-weight: 600; }
+.incident { margin: 12px 0; }
+.incident h3 { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.pill { font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 99px; background: var(--brand-soft); }
+.pill.state-warn { background: #fdf3d7; color: #7a5a00; }
+
+/* skip to content, for keyboard and screen reader users */
+.skip { position: absolute; left: 12px; top: -60px; z-index: 100; background: #fff; color: var(--ink); padding: 10px 14px; border-radius: 8px; font-weight: 600; text-decoration: none; }
+.skip:focus { top: 12px; }
+main:focus { outline: none; box-shadow: none; }

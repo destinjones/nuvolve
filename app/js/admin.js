@@ -157,6 +157,7 @@ async function settingsLicenses(box) {
       ${l.id ? '' : personSelect(l.user_id)}
       <div class="row"><div class="field"><label>Category</label><select name="category">${d.categories.map((c) => `<option ${c === l.category ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select></div>
       <div class="field"><label>State</label><input name="state" maxlength="2" value="${esc(l.state || BOOT.settings.state || '')}" placeholder="TX"></div></div>
+      <div class="hint" style="margin:-6px 0 8px">Licensed in more than one state? Add one license per state. Stops in a state they hold no license for are flagged before they're booked or finished.</div>
       <div class="field"><label>License #</label><input name="license_no" value="${esc(l.license_no || '')}"></div>
       <div class="row"><div class="field"><label>Issued or last renewed</label><input name="issued_on" type="date" value="${esc(l.issued_on || '')}"></div>
       <div class="field"><label>Expires</label><input name="expires_on" type="date" value="${esc(l.expires_on || '')}"></div></div>
@@ -557,7 +558,8 @@ function showSecretOnce(title, label, value, note) {
 }
 
 async function settingsIntegrations(box, d) {
-  const x = await api('/nuvolve/app/api/integrations');
+  const [x, sbx] = await Promise.all([api('/nuvolve/app/api/integrations'), api('/nuvolve/app/api/integrations/sandbox').catch(() => ({ sandbox: null }))]);
+  const sb = sbx.sandbox;
   const branchName = (id) => d.locations.find((l) => l.id === id)?.name || '';
   const liveKeys = x.keys.filter((k) => !k.revoked_at);
   box.innerHTML = `<div class="grid cols-2">
@@ -598,7 +600,22 @@ async function settingsIntegrations(box, d) {
           <button class="btn sm" data-toggle="${w.id}" data-on="${w.active ? 1 : 0}">${w.active ? 'Pause' : 'Turn on'}</button> <button class="btn sm" data-secret="${w.id}">New secret</button>
           <button class="btn sm danger" data-del="${w.id}">Delete</button></td></tr>`).join('')}</tbody></table></div>`
     : '<p class="muted">No webhooks yet.</p>'}
+  </div>
+
+  <div class="card">
+    <div class="card-head"><div><h2>Sandbox</h2><div class="small muted">A separate test copy of your company for building an integration: three sample customers, a tech and your default services, and its own key. Same API, same answers; nothing is ever texted or emailed from it, and your real customers never see it. Webhooks do go out.</div></div>
+      <div class="nowrap">${sb ? '<button class="btn" id="sb-make">Wipe and start over</button> <button class="btn danger" id="sb-del">Delete</button>' : '<button class="btn primary" id="sb-make">Make a sandbox</button>'}</div></div>
+    ${sb ? `<p class="small">Made ${fmtDate(sb.created_at.slice(0, 10))} · ${sb.customers} customers · ${sb.visits} visits · ${plural(sb.keys.length, 'active key')}${sb.keys.length ? ` (${sb.keys.map((k) => `<span class="mono">${esc(k.prefix)}…</span>`).join(', ')})` : ''}. Sandbox answers carry <code>Nuvolve-Mode: sandbox</code>.</p>` : ''}
   </div>`;
+
+  $('#sb-make', box).onclick = () => modal(sb ? 'Wipe the sandbox?' : 'Make a sandbox?', `<p>${sb ? 'Everything in the sandbox goes back to the sample data, and its old keys stop working. ' : ''}You get a new sandbox key, shown once.</p>`,
+    [{ label: 'Cancel' }, { label: sb ? 'Wipe and start over' : 'Make it', cls: 'primary', onClick: async () => {
+      const r = await api('/nuvolve/app/api/integrations/sandbox', { method: 'POST' });
+      showSecretOnce('Your sandbox key', 'Sandbox API key', r.key, 'It only reaches the sandbox. Use the same API address; answers say <code>Nuvolve-Mode: sandbox</code>.');
+      route();
+    } }]);
+  if ($('#sb-del', box)) $('#sb-del', box).onclick = () => modal('Delete the sandbox?', '<p>The sandbox and its keys go away. Your real data is not touched.</p>',
+    [{ label: 'Cancel' }, { label: 'Delete', cls: 'danger', onClick: async () => { await api('/nuvolve/app/api/integrations/sandbox', { method: 'DELETE' }); toast('Sandbox deleted'); route(); } }]);
 
   $('#copy-base', box).onclick = () => copyText(x.base_url, 'Copied');
   $('#new-key', box).onclick = () => {

@@ -53,6 +53,7 @@ function shareLocation() {
   GPS.watch = null;
   if (!navigator.geolocation || !window.isSecureContext) { GPS.state = 'unavailable'; return gpsBadge(); }
   if (gpsPaused()) { GPS.state = 'off'; return gpsBadge(); }
+  if (!gpsDisclosed()) { GPS.state = 'ask'; return gpsBadge(); }
   GPS.state = 'starting';
   GPS.watch = navigator.geolocation.watchPosition((p) => {
     const c = p.coords;
@@ -66,6 +67,30 @@ function shareLocation() {
   }, (err) => { GPS.state = err.code === 1 ? 'denied' : 'error'; gpsBadge(); }, { enableHighAccuracy: true, maximumAge: 15000, timeout: 30000 });
   gpsBadge();
 }
+// Before the phone is asked for its position the first time, the tech is told plainly what is shared, when, and
+// with whom, in a card under the location bar (it never blocks the route). Agreeing is saved on the phone and on the
+// account (POST /nuvolve/app/api/me/location-consent).
+const gpsDisclosed = () => { try { return localStorage.getItem('nv_gps_ok') === '1'; } catch { return false; } };
+function gpsDisclosure() {
+  const box = $('#gps-ask');
+  if (!box) return;
+  box.innerHTML = `<div class="card gps-disc" style="margin:8px 0"><b>${esc(t('Share your location?'))}</b>
+    <p class="small">${esc(t('While this app is open, your location goes to your office about every 30 seconds so dispatch can see the truck and customers get an arrival time.'))}</p>
+    <ul class="small"><li>${esc(t('Only while the app is open. Nothing is sent when it is closed.'))}</li><li>${esc(t('Your office sees it. Customers only see your arrival time.'))}</li><li>${esc(t('Tap the location bar any time to pause it.'))}</li></ul>
+    <p class="small muted">${esc(t('Keeping GPS on uses more battery. Plug the phone in on the dash if you can.'))}</p>
+    <div style="display:flex;gap:8px"><button type="button" class="btn primary" id="gps-yes">${esc(t('Share my location'))}</button><button type="button" class="btn" id="gps-no">${esc(t('Not now'))}</button></div></div>`;
+  $('#gps-yes', box).onclick = () => {
+    try { localStorage.setItem('nv_gps_ok', '1'); } catch { /* private mode */ }
+    api('/nuvolve/app/api/me/location-consent', { method: 'POST' }).catch(() => {});
+    box.innerHTML = '';
+    shareLocation();
+  };
+  $('#gps-no', box).onclick = () => {
+    try { localStorage.setItem('nv_gps_off', '1'); } catch { /* private mode */ }
+    box.innerHTML = '';
+    GPS.state = 'off'; gpsBadge();
+  };
+}
 function distM(a, b) {
   const r = (d) => (d * Math.PI) / 180;
   const x = Math.sin(r(b.latitude - a.latitude) / 2) ** 2 + Math.cos(r(a.latitude)) * Math.cos(r(b.latitude)) * Math.sin(r(b.longitude - a.longitude) / 2) ** 2;
@@ -74,10 +99,11 @@ function distM(a, b) {
 function gpsBadge() {
   const el = $('#gps');
   if (!el) return;
-  const label = { on: t('📍 Sharing location with the office'), starting: t('📍 Finding you...'), off: t('📍 Location paused. Tap to share'),
+  const label = { ask: t('📍 Location not shared yet'), on: t('📍 Sharing location with the office'), starting: t('📍 Finding you...'), off: t('📍 Location paused. Tap to share'),
     denied: t('📍 Location blocked. Allow it in your phone settings'), error: t("📍 Can't get a GPS fix"), unavailable: t('📍 Location needs the https app') }[GPS.state];
   el.textContent = label;
   el.classList.toggle('on', GPS.state === 'on');
+  if (GPS.state === 'ask' && !$('#gps-ask')?.innerHTML) gpsDisclosure();
 }
 
 // The bar at the bottom: no signal, saves waiting to go (with the last time the office got through, and Send now),
@@ -109,7 +135,9 @@ async function drawSync() {
   if ($('#sync-see')) $('#sync-see').onclick = () => NV.emit('tech.conflicts', {});
 }
 
-const SKIP_REASONS = ['Not home', 'Locked gate', 'Dog loose in the yard', 'Rain or high wind', 'Customer asked to reschedule', "Couldn't get in"];
+// Each reason carries a code, so the office knows a no-access trip (src/features/no-access.js) in either language.
+const SKIP_REASONS = [['Not home', 'not_home'], ['Locked gate', 'locked_gate'], ['Dog loose in the yard', 'dog'], ['Rain or high wind', 'weather'],
+  ['Customer asked to reschedule', 'reschedule'], ["Couldn't get in", 'no_entry']];
 
 // Cash or a check at the door, on the stop's bill. Card payments go through the customer's pay link or autopay.
 async function collectPayment(visitId, done = () => {}) {
@@ -393,7 +421,7 @@ async function showRoute() {
         <div style="display:flex;gap:6px"><button class="btn sm" data-theme-toggle title="${esc(t('Soft grey or bright white screen'))}" aria-label="${esc(t('Switch screen colour'))}">🌗</button><button class="btn sm" id="out">${esc(t('Log out'))}</button></div>
       </div>
       <div class="progress"><div style="width:${r.stops.length ? (done / r.stops.length) * 100 : 0}%"></div></div>
-      <button type="button" id="gps" class="gps-badge"></button>
+      <button type="button" id="gps" class="gps-badge"></button><div id="gps-ask"></div>
       <div class="daybar">${[-1, 0, 1].map((o) => { const d = addDays(todayStr(), o); return `<button data-d="${d}" class="${d === day ? 'on' : ''}">${fmtDay(d)}</button>`; }).join('')}</div>
     </div>
     <div class="wrap">
@@ -567,8 +595,8 @@ async function showStop(id) {
       if (!r.queued && r.invoiceId && !r.autopay?.charged) left.then(() => collectPayment(v.id));
     });
     $('#skip').onclick = () => { const sm = modal('Skip this stop?', `<div class="field"><label>Why?</label>
-      <div class="chips quick" id="skip-why" style="margin-bottom:10px">${SKIP_REASONS.map((r) => `<button type="button" class="chip" data-v="${esc(t(r))}">${esc(t(r))}</button>`).join('')}</div>
-      <input name="reason" placeholder="Not home, locked gate, rain..."></div>`, [
+      <div class="chips quick" id="skip-why" style="margin-bottom:10px">${SKIP_REASONS.map(([r, code]) => `<button type="button" class="chip" data-v="${esc(t(r))}" data-code="${code}">${esc(t(r))}</button>`).join('')}</div>
+      <input name="reason" placeholder="Not home, locked gate, rain..."><input type="hidden" name="reason_code" value=""></div>`, [
       { label: 'Back' },
       { label: 'Skip stop', cls: 'primary', onClick: async (m) => {
         const r = await saveOrQueue(`/nuvolve/app/api/visits/${v.id}/skip`, { ...formData(m), at: new Date().toISOString() }, { kind: 'skip', visitId: v.id });
@@ -577,7 +605,7 @@ async function showStop(id) {
       } },
     ]);
     // One tap fills the reason; the tech can still add to it.
-    $$('#skip-why .chip', sm.el).forEach((c) => (c.onclick = () => { $$('#skip-why .chip', sm.el).forEach((x) => x.classList.toggle('on', x === c)); $('[name=reason]', sm.el).value = c.dataset.v; }));
+    $$('#skip-why .chip', sm.el).forEach((c) => (c.onclick = () => { $$('#skip-why .chip', sm.el).forEach((x) => x.classList.toggle('on', x === c)); $('[name=reason]', sm.el).value = c.dataset.v; $('[name=reason_code]', sm.el).value = c.dataset.code; }));
     };
   }
 }

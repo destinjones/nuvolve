@@ -8,17 +8,31 @@
   <meta property="og:title" content="Security · Nuvolve CRM">
   <meta property="og:description" content="How Nuvolve CRM keeps a pest control company&#39;s data safe: its own database, HTTPS, two-factor login, roles, an activity log, nightly off-site backups and full export.">
   <link rel="canonical" href="https://destinjones.github.io/nuvolve/security.html">
+  <meta property="og:url" content="https://destinjones.github.io/nuvolve/security.html">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Nuvolve CRM">
+  <meta property="og:image" content="https://destinjones.github.io/nuvolve/app/brand/nuvolve-share.jpg">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Nuvolve CRM: pest control software for the owner who still runs a route">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Security · Nuvolve CRM">
+  <meta name="twitter:description" content="How Nuvolve CRM keeps a pest control company&#39;s data safe: its own database, HTTPS, two-factor login, roles, an activity log, nightly off-site backups and full export.">
+  <meta name="twitter:image" content="https://destinjones.github.io/nuvolve/app/brand/nuvolve-share.jpg">
   <link rel="icon" href="/nuvolve/app/icons/nuvolve.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/nuvolve/app/css/site.css">
+  <script defer data-domain="destinjones.github.io" src="https://plausible.io/js/script.tagged-events.outbound-links.js"></script>
   <script type="application/ld+json">{"@context":"https://schema.org","@type":"SoftwareApplication","name":"Nuvolve CRM","applicationCategory":"BusinessApplication","applicationSubCategory":"Pest control software","operatingSystem":"Web, iOS, Android","description":"Pest control CRM: routes, the tech phone app, billing and autopay, termite and commercial work, door-to-door sales, payroll and QuickBooks.","url":"https://destinjones.github.io/nuvolve/","offers":{"@type":"Offer","price":"39.00","priceCurrency":"USD","priceSpecification":{"@type":"UnitPriceSpecification","price":"39.00","priceCurrency":"USD","unitText":"route per month"}}}</script>
   <script defer src="/nuvolve/app/js/site.js"></script>
 </head>
 <body data-page="security" data-lead-url="" data-support-email="support@nuvolvecrm.com">
+<a class="skip" href="#main">Skip to content</a>
 <header class="top"><div class="wrap">
   <a class="brand" href="/nuvolve/"><img src="/nuvolve/app/icons/nuvolve.svg" alt="">Nuvolve CRM</a>
   <nav aria-label="Nuvolve"><a href="/nuvolve/pricing.html">Pricing</a><a href="/nuvolve/compare.html">Compare</a><a href="/nuvolve/roi.html">ROI calculator</a><a href="/nuvolve/security.html" aria-current="page">Security</a><a href="/nuvolve/call.html" data-event="Book call" data-where="nav">Book a call</a><a class="btn" href="/nuvolve/app/start.html?as=owner">Log in</a></nav>
 </div></header>
-<main class="wrap">
+<main class="wrap" id="main" tabindex="-1">
+<div class="draft-banner" role="note"><b>Not yet reviewed by a lawyer.</b> This page describes how Nuvolve works today. A lawyer will review its wording before Nuvolve takes its first paying customer.</div>
 <div class="hero">
   <h1>How we keep your company's data safe</h1>
   <p class="lead">Plain answers about where your data lives, who can see it, and what happens if something goes wrong. This page describes how the app works today.</p>
@@ -56,7 +70,7 @@
   </div>
   <div class="card">
     <h2>Backups, off-site and checked every day</h2>
-    <p>Every night each company's database is copied to a backup, and the last 14 days are kept on the server. The same backup is then uploaded to separate cloud storage (an S3-compatible bucket with a different provider from the server), so losing the server doesn't lose the backups. The off-site copies are kept for 30 days.</p>
+    <p>Every night each company's database is copied to a backup, and the last 14 days are kept on the server. The same backup is then uploaded to separate storage (an Amazon S3 bucket in a different AWS region from the server, under its own access key that can add backups but not delete them), so losing the server doesn't lose the backups. The off-site copies are kept for 30 days.</p>
     <p>Every day the newest backup is opened on its own and checked: it has to pass SQLite's integrity check, and its customers, visits and invoices are counted against the live data.</p>
     <p class="muted small">Owners and admins see the last check in Settings, under Import &amp; export, and the <a href="/nuvolve/status.html">status page</a> shows whether last night's off-site copy arrived. Saved keys inside a backup are sealed with a server key that is kept apart from the backups. Restoring a backup is one command, and it sets the current files aside first.</p>
   </div>
@@ -84,12 +98,12 @@
 
 </main>
 <footer class="foot"><div class="wrap">
-  <div class="foot-cols"><div><h4>Product</h4><a href="/nuvolve/pricing.html">Pricing</a><a href="/nuvolve/status.html">System status</a><a href="/nuvolve/compare.html">Compare</a><a href="/nuvolve/roi.html">ROI calculator</a><a href="/nuvolve/help.html">Help center</a><a href="/nuvolve/changelog.html">Changelog</a><a href="/nuvolve/roadmap.html">Roadmap</a></div><div><h4>Company</h4><a href="/nuvolve/about.html">About Nuvolve</a><a href="/nuvolve/fit.html">Who it&#39;s for</a><a href="/nuvolve/beta.html">Founding shops</a><a href="/nuvolve/call.html">Book a call</a><a href="/nuvolve/promises.html">What we won&#39;t do</a></div><div><h4>Resources</h4><a href="/nuvolve/blog.html">Guides</a><a href="/nuvolve/glossary.html">Pest control glossary</a></div><div><h4>Legal</h4><a href="/nuvolve/security.html">Security</a><a href="/nuvolve/data.html">Your data</a><a href="/nuvolve/terms.html">Terms of Service</a><a href="/nuvolve/privacy.html">Privacy Policy</a><a href="/nuvolve/dpa.html">Data Processing Addendum</a><a href="/nuvolve/subprocessors.html">Subprocessors</a><a href="/nuvolve/sla.html">Service Level Agreement</a></div></div>
+  <div class="foot-cols"><div><h4>Product</h4><a href="/nuvolve/pricing.html">Pricing</a><a href="/nuvolve/status.html">System status</a><a href="/nuvolve/compare.html">Compare</a><a href="/nuvolve/roi.html">ROI calculator</a><a href="/nuvolve/help.html">Help center</a><a href="/nuvolve/changelog.html">Changelog</a><a href="/nuvolve/roadmap.html">Roadmap</a></div><div><h4>Company</h4><a href="/nuvolve/about.html">About Nuvolve</a><a href="/nuvolve/fit.html">Who it&#39;s for</a><a href="/nuvolve/beta.html">Founding shops</a><a href="/nuvolve/call.html">Book a call</a><a href="/nuvolve/promises.html">What we won&#39;t do</a></div><div><h4>Resources</h4><a href="/nuvolve/blog.html">Guides</a><a href="/nuvolve/glossary.html">Pest control glossary</a></div><div><h4>Legal</h4><a href="/nuvolve/security.html">Security</a><a href="/nuvolve/data.html">Your data</a><a href="/nuvolve/terms.html">Terms of Service</a><a href="/nuvolve/privacy.html">Privacy Policy</a><a href="/nuvolve/dpa.html">Data Processing Addendum</a><a href="/nuvolve/subprocessors.html">Subprocessors</a><a href="/nuvolve/sla.html">Service Level Agreement</a><a href="/nuvolve/beta-agreement.html">Founding shop agreement</a><a href="/nuvolve/accessibility.html">Accessibility</a></div></div>
   <div class="foot-cta">
     <a class="btn primary" href="/nuvolve/beta.html?from=signup" data-event="Start trial" data-where="footer">Start a free trial</a>
     <a class="btn" href="/nuvolve/call.html" data-event="Book call" data-where="footer">Book a 15-minute call</a>
   </div>
-  <p class="entity">© 2026 [Legal entity name, LLC] · [Mailing address] · <a href="tel:">(XXX) XXX-XXXX</a> · <a href="mailto:support@nuvolvecrm.com">support@nuvolvecrm.com</a><br>Support hours: Mon-Fri 7am-6pm and Sat 8am-noon Central</p>
+  <p class="entity">© 2026 Nuvolve CRM · <a href="mailto:support@nuvolvecrm.com">support@nuvolvecrm.com</a><br>Support hours: Mon-Fri 7am-6pm and Sat 8am-noon Central</p>
 </div></footer>
 </body>
 </html>
