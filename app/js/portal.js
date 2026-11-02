@@ -19,11 +19,33 @@ function emailLogin() {
   };
 }
 
+// The designer in Settings shows this page in a frame at /nuvolve/app/portal/preview, with a sample customer, and sends
+// each change to the design over postMessage so the preview redraws as the owner works.
+const PREVIEW = token === 'preview';
+if (PREVIEW) {
+  addEventListener('message', (e) => {
+    if (e.origin !== location.origin || e.data?.type !== 'nv-portal-design' || !D) return;
+    D.design = { ...D.design, ...e.data.design, logoUrl: e.data.design.logo === false ? null : D.logoAsset };
+    if ('message' in e.data) D.company.message = e.data.message;
+    if ('tips' in e.data) D.tipsEnabled = e.data.tips;
+    if ('paid' in e.data) D.balance = e.data.paid ? 0 : 129;
+    render();
+  });
+}
+
 async function load() {
   if (!token || token === 'portal') return emailLogin();
+  if (PREVIEW) {
+    try { D = await api('/nuvolve/app/api/portal-preview'); } catch (e) { app.innerHTML = `<div class="wrap" style="margin-top:40px"><div class="card"><h2>Preview</h2><p>${esc(e.message)}</p></div></div>`; return; }
+    D.logoAsset = D.design.logoUrl;
+    render();
+    parent.postMessage({ type: 'nv-portal-ready' }, location.origin);
+    return;
+  }
   try {
     D = await api(`/nuvolve/app/api/portal/${token}`);
   } catch (e) {
+    if (e.status === 410) return expiredLink(app, 'portal', token, e.message);
     app.innerHTML = `<div class="wrap" style="margin-top:40px"><div class="card"><h2>Link not found</h2><p>${esc(e.message)}</p></div></div>`;
     return;
   }
@@ -50,84 +72,153 @@ const tipAmount = () => (tipCustom != null ? tipCustom : Math.round(D.balance * 
 const PAY_METHODS = { card: 'Card', autopay: 'Autopay', ach: 'Bank transfer', cash: 'Cash', check: 'Check', credit: 'Account credit', returned: 'Returned bank payment', other: 'Other' };
 const payMethod = (m) => PAY_METHODS[m] || (m ? String(m).charAt(0).toUpperCase() + String(m).slice(1) : 'Payment');
 
-function render() {
-  const c = D.company;
-  app.innerHTML = `
-    <div class="hero">
-      <div class="co">${esc(c.name || '')}</div>
-      <h1>Hi ${esc((D.customer.name || '').split(' ')[0])}!</h1>
-      ${c.message ? `<div style="opacity:.9;font-size:14px;max-width:440px;margin:0 auto">${esc(c.message)}</div>` : ''}
-    </div>
-    <div class="wrap">
-      <div class="card due">
-        ${D.balance > 0 ? `
-          <div class="muted">Amount due</div>
-          <div class="amt">${money(D.balance)}</div>
-          ${D.openInvoices.map((i) => `<div class="line small"><span>${esc(i.description || 'Service')} <span class="muted">· due ${fmtDate(i.due_date)}</span> <a href="/nuvolve/app/api/portal/${token}/invoices/${i.id}" target="_blank" rel="noopener">View invoice</a></span><b>${money(i.amount - i.amount_paid)}</b></div>`).join('')}
-          ${D.tipsEnabled !== false ? `<div style="text-align:left;margin-top:14px">
-            <label>Add a tip for your technician? (100% goes to them)</label>
-            <div class="tips">${[0, 10, 15, 20].map((p) => `<button data-tip="${p}" class="${tipCustom == null && tipPct === p ? 'on' : ''}">${p ? p + '%' : 'No tip'}</button>`).join('')}</div>
-            <div style="margin-top:6px"><input id="tip-custom" type="number" step="1" min="0" inputmode="decimal" placeholder="Or enter a tip amount" value="${tipCustom ?? ''}"></div>
-          </div>` : ''}
-          <label class="check" style="margin:14px 0 4px;justify-content:center"><input type="checkbox" id="save" ${D.customer.autopay ? 'checked' : ''}> Save my card and pay automatically after each service</label>
-          <button class="btn primary big block" id="pay" style="margin-top:10px">Pay ${money(D.balance + tipAmount())}</button>
-          <div class="small muted" style="margin-top:8px">🔒 Secure card payment${D.stripeEnabled ? ' by Stripe' : ' (demo mode, no real charge)'}</div>`
-        : `<div style="font-size:40px">✅</div><h2>You're all paid up</h2><p class="muted">Thank you!</p>`}
-      </div>
-      ${NV.slots('portal.top', { data: D, token })}
-
-      <div class="card">
-        <h2>Autopay</h2>
-        ${D.customer.card ? `<p>${esc(D.customer.card)} is saved.</p>
-          <label class="check"><input type="checkbox" id="autopay" ${D.customer.autopay ? 'checked' : ''}> Charge this card automatically after each service</label>`
-          : '<p class="muted">Tick "Save my card" next time you pay and you never have to think about a bill again.</p>'}
-      </div>
-
-      ${D.upcoming.length ? `<div class="card"><h2>Upcoming service</h2>${D.upcoming.map((u) => `<div class="line"><span><b>${fmtDate(u.date, { weekday: 'long', month: 'long', day: 'numeric' })}</b>${u.time_window ? ` · ${esc(u.time_window)}` : ''}<br><span class="small muted">${esc(u.service_name || '')} at ${esc(u.address)}</span></span>
-        ${u.move_requested ? '<span class="pill yellow">Move requested</span>' : `<button class="btn sm" data-move="${u.id}">Change day</button>`}</div>`).join('')}</div>` : ''}
-
-      <div class="card">
-        <h2>Need us sooner?</h2>
-        <p class="small muted">Seeing activity between visits? Re-treats are on us. Tell us what's going on.</p>
-        <div class="field"><textarea id="req" placeholder="Ants in the kitchen by the sink..."></textarea></div>
-        <div class="field"><label>Best day for you (optional)</label><input id="req-date" type="date" min="${todayStr()}"></div>
-        <button class="btn primary block" id="send">Request service</button>
-        ${c.phone ? `<p class="small" style="text-align:center;margin-top:10px">Or call us: <a href="tel:${esc(c.phone)}">${esc(c.phone)}</a></p>` : ''}
-      </div>
-
-      <div id="sightings-card"></div>
-
-      ${D.history.length ? `<div class="card"><h2>Service history</h2>${D.history.map((h) => `<div class="line" style="display:block">
+// One finished visit, one invoice, one payment: the same lines on the page and in the full history.
+function visitLine(h) {
+  return `<div class="line" style="display:block">
         <div style="display:flex;justify-content:space-between"><b>${fmtDate(h.date)}</b><span class="small muted">${esc(h.tech_name || '')}</span></div>
         <div class="small muted">${esc(h.service_name || '')}${h.target_pests ? ' · ' + esc(h.target_pests) : ''}</div>
         ${h.tech_notes ? `<div class="small">${esc(h.tech_notes)}</div>` : ''}
         ${h.products?.length ? `<div class="small" style="margin-top:4px">🧪 ${h.products.map((p) => `${esc(p.name)}${p.epa_reg ? ` <span class="muted">(EPA ${esc(p.epa_reg)})</span>` : ''}`).join(', ')}</div>` : ''}
         <div class="small" style="margin-top:4px"><a href="/nuvolve/app/api/portal/${token}/report?visit=${h.id}" target="_blank" rel="noopener">Service report</a></div>
         ${h.photos?.length ? `<div class="photos">${h.photos.map((p) => `<figure class="ph"><a href="/nuvolve/app/api/portal/${token}/photos/${p.id}" target="_blank" rel="noopener"><img src="/nuvolve/app/api/portal/${token}/photos/${p.id}" alt="Service photo" loading="lazy"></a>
-          <figcaption>${p.kind === 'issue' ? '<span class="pill yellow">Found</span> ' : ''}${esc(p.caption || '')}</figcaption></figure>`).join('')}</div>` : ''}</div>`).join('')}</div>` : ''}
+          <figcaption>${p.kind === 'issue' ? '<span class="pill yellow">Found</span> ' : ''}${esc(p.caption || '')}</figcaption></figure>`).join('')}</div>` : ''}</div>`;
+}
+const invoiceLine = (i) => `<div class="line small"><span>${esc(i.number || `#${i.id}`)} · ${fmtDate(i.date)}<br><span class="muted">${esc(i.description || 'Service')}</span></span>
+        <span style="text-align:right">${money(i.amount)}<br><a href="/nuvolve/app/api/portal/${token}/invoices/${i.id}" target="_blank" rel="noopener">${i.status === 'paid' ? 'Receipt' : 'View'}</a></span></div>`;
+const paymentLine = (p) => `<div class="line small"><span>${fmtDate(p.date)} · ${esc(payMethod(p.method))}${p.tip ? ` · includes ${money(p.tip)} tip` : ''}</span><b>${money(p.amount + (p.tip || 0))}</b></div>`;
 
-      ${D.history.length ? `<div class="card"><h2>Pesticide records</h2><p class="small muted">Every product applied at your home in the last 12 months, with EPA numbers and the licensed applicator. Handy for landlords, HOAs, and anyone with kids, pets or allergies.</p>
+// Everything the customer has with us, not just the latest: services, invoices, payments and each year's
+// pesticide records. Opens over the page; Back returns to it.
+async function fullHistory(tab = 'services') {
+  if (D.preview) return toast('Preview only');
+  let H;
+  try { H = await api(`/nuvolve/app/api/portal/${token}/history`); } catch (e) { return toast(e.message, true); }
+  const TABS = [['services', 'Services', H.visits.length], ['invoices', 'Invoices', H.invoices.length], ['payments', 'Payments', H.payments.length], ['records', 'Pesticide records', H.years.length]];
+  const draw = (t) => {
+    const body = {
+      services: () => (H.visits.length ? H.visits.map(visitLine).join('') : '<p class="muted">No finished services yet.</p>'),
+      invoices: () => (H.invoices.length ? H.invoices.map(invoiceLine).join('') : '<p class="muted">No invoices yet.</p>'),
+      payments: () => (H.payments.length ? H.payments.map(paymentLine).join('') : '<p class="muted">No payments yet.</p>'),
+      records: () => `<p class="small muted">Each record lists every product applied at your property that year, with EPA registration numbers, amounts and the licensed applicator.</p>
+        ${H.years.length ? H.years.map((y) => `<div class="line"><span><b>${esc(y)}</b></span><a class="btn sm" href="/nuvolve/app/api/portal/${token}/report?from=${y}-01-01&to=${y}-12-31" target="_blank" rel="noopener">View ${esc(y)} record</a></div>`).join('') : '<p class="muted">No pesticide applications on record yet.</p>'}
+        ${D.hasDevices ? `<a class="btn block" style="margin-top:8px" href="/nuvolve/app/api/portal/${token}/device-report" target="_blank" rel="noopener">View station inspection report</a>` : ''}`,
+    }[t]();
+    app.innerHTML = `${brandCss(design())}<div class="hero" style="${heroStyle(design())};padding-bottom:60px"><div class="co">${esc(D.company.name || '')}</div><h1>Your full history</h1></div>
+      <div class="wrap"><div class="card">
+        <button class="btn sm" id="back">← Back to my account</button>
+        <div class="pd-tabs" style="display:flex;gap:6px;flex-wrap:wrap;margin:12px 0">${TABS.map(([k, label, n]) => `<button class="btn sm ${k === t ? 'primary' : ''}" data-tab="${k}">${label} <span class="${k === t ? '' : 'muted'}">${n}</span></button>`).join('')}</div>
+        ${body}
+      </div></div>`;
+    $('#back').onclick = () => { render(); scrollTo(0, 0); };
+    $$('[data-tab]').forEach((b) => (b.onclick = () => draw(b.dataset.tab)));
+    NV.emit('portal.rendered', { data: D, token, root: app, rerender: render, reload: load });
+  };
+  draw(tab);
+  scrollTo(0, 0);
+}
+
+// The owner's design (Settings → Customer page): which boxes, in what order, the words, the color and logo.
+const DESIGN_DEFAULT = { blocks: ['autopay', 'upcoming', 'request', 'sightings', 'history', 'records', 'invoices', 'agreements', 'payments', 'referral'].map((key) => ({ key, on: true })),
+  words: {}, options: { tech_names: true, photos: true, reschedule: true, save_card: true, full_history: true }, color: '', hero: 'gradient', logo: true, logoUrl: null };
+const WORD = {
+  headline: 'Hi {first}!', due_label: 'Amount due', pay_button: 'Pay {amount}', tip_label: 'Add a tip for your technician? (100% goes to them)',
+  paid_title: "You're all paid up", paid_text: 'Thank you!', request_title: 'Need us sooner?',
+  request_text: "Seeing activity between visits? Re-treats are on us. Tell us what's going on.", footer_note: '',
+};
+const design = () => ({ ...DESIGN_DEFAULT, ...(D.design || {}), options: { ...DESIGN_DEFAULT.options, ...(D.design?.options || {}) } });
+// One of the page's words, as safe HTML: the owner's own if they wrote one, else the built-in, with {first},
+// {amount} and {company} filled in (vars are already escaped).
+function word(key, vars = {}) {
+  const own = D.design?.words?.[key];
+  const text = own != null && own !== '' ? own : WORD[key];
+  return esc(String(text)).replace(/\{(first|amount|company)\}/g, (m, k) => (vars[k] != null ? vars[k] : m));
+}
+const isHex = (c) => /^#[0-9a-f]{6}$/i.test(String(c || ''));
+// A darker shade of the brand color for the gradient's far end.
+const shade = (hex, f = 0.55) => '#' + [1, 3, 5].map((i) => Math.round(parseInt(hex.slice(i, i + 2), 16) * f).toString(16).padStart(2, '0')).join('');
+// The owner's color on buttons and links.
+const brandCss = (d) => (isHex(d.color) ? `<style>:root{--brand:${d.color}} .btn.primary{background:${d.color};border-color:${d.color}} .tips button.on{background:${d.color};border-color:${d.color}} #app a:not(.btn){color:${d.color}}</style>` : '');
+function heroStyle(d) {
+  const col = isHex(d.color) ? d.color : '#2f855a';
+  if (d.hero === 'solid') return `background:${col};color:#fff`;
+  if (d.hero === 'light') return `background:var(--panel);color:var(--ink);border-bottom:4px solid ${col}`;
+  return `background:linear-gradient(160deg, ${shade(col)}, ${col});color:#fff`;
+}
+
+function render() {
+  const c = D.company;
+  const d = design();
+  const vars = { first: esc((D.customer.name || '').split(' ')[0]), company: esc(c.name || ''), amount: money(D.balance + tipAmount()) };
+  // Each box the owner can show, hide or move. They draw nothing when there is nothing to show.
+  const BOX = {
+    autopay: () => `<div class="card">
+        <h2>Autopay</h2>
+        ${D.customer.card ? `<p>${esc(D.customer.card)} is saved.</p>
+          <label class="check"><input type="checkbox" id="autopay" ${D.customer.autopay ? 'checked' : ''}> Charge this card automatically after each service</label>`
+          : '<p class="muted">Tick "Save my card" next time you pay and you never have to think about a bill again.</p>'}
+      </div>`,
+    upcoming: () => (D.upcoming.length ? `<div class="card"><h2>Upcoming service</h2>${D.upcoming.map((u) => `<div class="line"><span><b>${fmtDate(u.date, { weekday: 'long', month: 'long', day: 'numeric' })}</b>${u.time_window ? ` · ${esc(u.time_window)}` : ''}<br><span class="small muted">${esc(u.service_name || '')} at ${esc(u.address)}</span></span>
+        ${u.move_requested ? '<span class="pill yellow">Move requested</span>' : d.options.reschedule ? `<button class="btn sm" data-move="${u.id}">Change day</button>` : ''}</div>`).join('')}</div>` : ''),
+    request: () => `<div class="card">
+        <h2>${word('request_title', vars)}</h2>
+        <p class="small muted">${word('request_text', vars)}</p>
+        <div class="field"><textarea id="req" placeholder="Ants in the kitchen by the sink..."></textarea></div>
+        <div class="field"><label>Best day for you (optional)</label><input id="req-date" type="date" min="${todayStr()}"></div>
+        <label class="check" style="margin-bottom:8px"><input type="checkbox" id="req-urgent"> ${esc(NV.t('Today, please: it can\'t wait'))}</label>
+        <button class="btn primary block" id="send">Request service</button>
+        ${c.phone ? `<p class="small" style="text-align:center;margin-top:10px">Or call us: <a href="tel:${esc(c.phone)}">${esc(c.phone)}</a></p>` : ''}
+      </div>`,
+    sightings: () => '<div id="sightings-card"></div>',
+    history: () => (D.history.length ? `<div class="card"><h2>Service history</h2>${D.history.map(visitLine).join('')}
+        ${d.options.full_history ? '<button class="btn block" data-full="services" style="margin-top:8px">See full history</button>' : ''}</div>` : ''),
+    records: () => (D.history.length ? `<div class="card"><h2>Pesticide records</h2><p class="small muted">Every product applied at your home in the last 12 months, with EPA numbers and the licensed applicator. Handy for landlords, HOAs, and anyone with kids, pets or allergies.</p>
         <a class="btn block" href="/nuvolve/app/api/portal/${token}/report" target="_blank" rel="noopener">View pesticide application record</a>
-        ${D.hasDevices ? `<a class="btn block" style="margin-top:8px" href="/nuvolve/app/api/portal/${token}/device-report" target="_blank" rel="noopener">View station inspection report</a>` : ''}</div>` : ''}
-
-      ${D.invoices?.length ? `<div class="card"><h2>Invoices</h2>${D.invoices.map((i) => `<div class="line small"><span>${esc(i.number || `#${i.id}`)} · ${fmtDate(i.date)}<br><span class="muted">${esc(i.description || 'Service')}</span></span>
-        <span style="text-align:right">${money(i.amount)}<br><a href="/nuvolve/app/api/portal/${token}/invoices/${i.id}" target="_blank" rel="noopener">${i.status === 'paid' ? 'Receipt' : 'View'}</a></span></div>`).join('')}</div>` : ''}
-
-      ${D.agreements?.length ? `<div class="card"><h2>Estimates and agreements</h2>${D.agreements.map((a) => `<div class="line"><span>${esc(a.title || 'Service agreement')} <span class="small muted">${a.status === 'accepted' ? `signed ${fmtDate(a.accepted_at)}` : 'waiting for your signature'}</span></span>
+        ${D.hasDevices ? `<a class="btn block" style="margin-top:8px" href="/nuvolve/app/api/portal/${token}/device-report" target="_blank" rel="noopener">View station inspection report</a>` : ''}
+        ${d.options.full_history ? '<button class="btn block" data-full="records" style="margin-top:8px">Records from other years</button>' : ''}</div>` : ''),
+    invoices: () => (D.invoices?.length ? `<div class="card"><h2>Invoices</h2>${D.invoices.map(invoiceLine).join('')}
+        ${d.options.full_history ? '<button class="btn block" data-full="invoices" style="margin-top:8px">See all invoices</button>' : ''}</div>` : ''),
+    agreements: () => `${D.agreements?.length ? `<div class="card"><h2>Estimates and agreements</h2>${D.agreements.map((a) => `<div class="line"><span>${esc(a.title || 'Service agreement')} <span class="small muted">${a.status === 'accepted' ? `signed ${fmtDate(a.accepted_at)}` : 'waiting for your signature'}</span></span>
         <a class="btn sm ${a.status === 'accepted' ? '' : 'primary'}" href="/nuvolve/app/sign/${esc(a.token)}">${a.status === 'accepted' ? 'View' : 'Review and sign'}</a></div>`).join('')}</div>` : ''}
-
       ${D.contracts?.length ? `<div class="card"><h2>Contracts</h2>${D.contracts.map((k) => `<div class="line"><span>${esc(k.title)} <span class="small muted">${k.status === 'awaiting' ? 'waiting for your signature'
         : k.status === 'cancelled' ? 'cancelled' : `signed ${fmtDate(String(k.signed_at || '').slice(0, 10))}${k.cancel_open ? `. You can cancel until ${fmtDate(k.cancel_by)}` : ''}`}</span></span>
-        ${k.url ? `<a class="btn sm ${k.status === 'awaiting' ? 'primary' : ''}" href="${esc(k.url)}">${k.status === 'awaiting' ? 'Review and sign' : 'View'}</a>` : ''}</div>`).join('')}</div>` : ''}
-
-      ${D.payments.length ? `<div class="card"><h2>Payments</h2>${D.payments.map((p) => `<div class="line small"><span>${fmtDate(p.date)} · ${esc(payMethod(p.method))}${p.tip ? ` · includes ${money(p.tip)} tip` : ''}</span><b>${money(p.amount + (p.tip || 0))}</b></div>`).join('')}</div>` : ''}
-
-      ${D.referral?.enabled ? `<div class="card"><h2>🎁 Give ${money(D.referral.friendReward)}, get ${money(D.referral.reward)}</h2>
+        ${k.url ? `<a class="btn sm ${k.status === 'awaiting' ? 'primary' : ''}" href="${esc(k.url)}">${k.status === 'awaiting' ? 'Review and sign' : 'View'}</a>` : ''}</div>`).join('')}</div>` : ''}`,
+    payments: () => (D.payments.length ? `<div class="card"><h2>Payments</h2>${D.payments.map(paymentLine).join('')}
+        ${d.options.full_history ? '<button class="btn block" data-full="payments" style="margin-top:8px">See all payments</button>' : ''}</div>` : ''),
+    referral: () => (D.referral?.enabled ? `<div class="card"><h2>🎁 Give ${money(D.referral.friendReward)}, get ${money(D.referral.reward)}</h2>
         <p class="small">Know someone with bugs? ${D.referral.friendReward ? `They get ${money(D.referral.friendReward)} off` : 'Send them our way'} and you get a ${money(D.referral.reward)} credit after their first service.</p>
         ${D.referral.link ? `<div class="field"><input id="ref-link" readonly value="${esc(D.referral.link)}"></div>
           <div class="row"><button class="btn primary" id="ref-share">Share my link</button><a class="btn" href="sms:?&body=${encodeURIComponent(`I use ${c.name || 'these guys'} for pest control. Book with my link and get ${money(D.referral.friendReward)} off: ${D.referral.link}`)}">Text it</a></div>`
           : `<p>Or have them mention your code: <b>${esc(D.referral.code)}</b></p>`}
-        ${D.referral.referred ? `<p class="small muted" style="margin-top:8px">You've referred ${D.referral.referred} ${D.referral.referred === 1 ? 'person' : 'people'} ${D.referral.earned ? ` and earned ${money(D.referral.earned)}` : ''}. Thank you!</p>` : ''}</div>` : ''}
+        ${D.referral.referred ? `<p class="small muted" style="margin-top:8px">You've referred ${D.referral.referred} ${D.referral.referred === 1 ? 'person' : 'people'} ${D.referral.earned ? ` and earned ${money(D.referral.earned)}` : ''}. Thank you!</p>` : ''}</div>` : ''),
+  };
+  app.innerHTML = `
+    ${brandCss(d)}
+    <div class="hero" style="${heroStyle(d)}">
+      ${d.logoUrl ? `<img class="portal-logo" src="${esc(d.logoUrl)}" alt="${esc(c.name || '')}" style="max-height:52px;max-width:200px;margin:0 auto 8px;display:block;${d.hero === 'light' ? '' : 'background:#fff;padding:6px 10px;border-radius:10px'}">` : ''}
+      <div class="co">${esc(c.name || '')}</div>
+      <h1>${word('headline', vars)}</h1>
+      ${c.message ? `<div style="opacity:.9;font-size:14px;max-width:440px;margin:0 auto">${esc(c.message)}</div>` : ''}
+    </div>
+    <div class="wrap">
+      ${D.preview ? '<div class="alert info small" style="margin-bottom:8px">Preview with a sample customer. Buttons are turned off.</div>' : ''}
+      <div class="card due">
+        ${D.balance > 0 ? `
+          <div class="muted">${word('due_label', vars)}</div>
+          <div class="amt">${money(D.balance)}</div>
+          ${D.openInvoices.map((i) => `<div class="line small"><span>${esc(i.description || 'Service')} <span class="muted">· due ${fmtDate(i.due_date)}</span> <a href="/nuvolve/app/api/portal/${token}/invoices/${i.id}" target="_blank" rel="noopener">View invoice</a></span><b>${money(i.amount - i.amount_paid)}</b></div>`).join('')}
+          ${D.tipsEnabled !== false ? `<div style="text-align:left;margin-top:14px">
+            <label>${word('tip_label', vars)}</label>
+            <div class="tips">${[0, 10, 15, 20].map((p) => `<button data-tip="${p}" class="${tipCustom == null && tipPct === p ? 'on' : ''}">${p ? p + '%' : 'No tip'}</button>`).join('')}</div>
+            <div style="margin-top:6px"><input id="tip-custom" type="number" step="1" min="0" inputmode="decimal" placeholder="Or enter a tip amount" value="${tipCustom ?? ''}"></div>
+          </div>` : ''}
+          ${d.options.save_card ? `<label class="check" style="margin:14px 0 4px;justify-content:center"><input type="checkbox" id="save" ${D.customer.autopay ? 'checked' : ''}> Save my card and pay automatically after each service</label>` : ''}
+          <button class="btn primary big block" id="pay" style="margin-top:10px">${word('pay_button', vars)}</button>
+          <div class="small muted" style="margin-top:8px">🔒 Secure card payment${D.stripeEnabled ? ' by Stripe' : ' (demo mode, no real charge)'}</div>`
+        : `<div style="font-size:40px">✅</div><h2>${word('paid_title', vars)}</h2><p class="muted">${word('paid_text', vars)}</p>`}
+      </div>
+      ${NV.slots('portal.top', { data: D, token })}
+
+      ${d.blocks.filter((b) => b.on && BOX[b.key]).map((b) => BOX[b.key]()).join('\n')}
 
       ${NV.slots('portal.cards', { data: D, token })}
 
@@ -135,9 +226,14 @@ function render() {
 
       ${window.NVTheme ? `<div class="small muted" style="text-align:center;margin-bottom:10px">Screen: ${NVTheme.picker()}</div>` : ''}
 
+      ${word('footer_note', vars) ? `<p class="small" style="text-align:center">${word('footer_note', vars)}</p>` : ''}
       <p class="small muted" style="text-align:center">${esc(c.name || '')}${c.phone ? ' · ' + esc(c.phone) : ''}${c.email ? ' · ' + esc(c.email) : ''}</p>
     </div>`;
-
+  if (D.preview) {
+    // Nothing on the preview reaches the server: every button just says so.
+    $$('button, a[href], input, textarea', app).forEach((el) => { if (el.closest('.tips') || el.id === 'tip-custom') return; el.addEventListener('click', (e) => { e.preventDefault(); e.stopImmediatePropagation(); toast('Preview only'); }, true); });
+  }
+  $$('[data-full]').forEach((b) => (b.onclick = () => fullHistory(b.dataset.full)));
   if ($('#ref-share')) $('#ref-share').onclick = async () => {
     const link = D.referral.link;
     try {
@@ -169,10 +265,11 @@ function render() {
   })));
   portalSightings();
   NV.emit('portal.rendered', { data: D, token, root: app, rerender: render, reload: load });
-  $('#send').onclick = async () => {
+  if ($('#send')) $('#send').onclick = async () => {
     try {
-      await api(`/nuvolve/app/api/portal/${token}/request`, { body: { message: $('#req').value, preferred_date: $('#req-date').value } });
+      await api(`/nuvolve/app/api/portal/${token}/request`, { body: { message: $('#req').value, preferred_date: $('#req-date').value, urgent: Boolean($('#req-urgent')?.checked) } });
       $('#req').value = '';
+      if ($('#req-urgent')) $('#req-urgent').checked = false;
       toast("Got it! We'll reach out to schedule.");
     } catch (err) { toast(err.message, true); }
   };
@@ -180,7 +277,7 @@ function render() {
 
 async function pay(e) {
   const btn = e.currentTarget;
-  const body = { save_card: $('#save').checked, tip: tipAmount() };
+  const body = { save_card: Boolean($('#save')?.checked), tip: tipAmount() };
   btn.disabled = true;
   try {
     const r = await api(`/nuvolve/app/api/portal/${token}/pay`, { body });
@@ -207,8 +304,10 @@ async function pay(e) {
 // Commercial accounts: the site's staff keep the pest sighting log here, and print the audit binder.
 async function portalSightings() {
   const box = $('#sightings-card');
+  if (!box) return;
   let S;
-  try { S = await api(`/nuvolve/app/api/portal/${token}/sightings`); } catch { return; }
+  if (D.preview) S = D.sightings;
+  else try { S = await api(`/nuvolve/app/api/portal/${token}/sightings`); } catch { return; }
   if (!S.sightings) return;
   box.innerHTML = `<div class="card"><h2>Pest sighting log</h2>
     <p class="small muted">Saw a pest between visits? Log it here. Your technician checks every open sighting on the next service, and it all goes in your audit binder.</p>
@@ -218,6 +317,7 @@ async function portalSightings() {
       ${x.action_taken ? `<div class="small">✓ ${esc(x.action_taken)}</div>` : ''}</div>
       ${x.status === 'open' ? '<span class="pill yellow">Open</span>' : '<span class="pill green">Handled</span>'}</div>`).join('')}</div>` : ''}
     <a class="btn block" style="margin-top:10px" href="/nuvolve/app/api/portal/${token}/audit-binder" target="_blank" rel="noopener">📁 Open audit binder</a></div>`;
+  if (D.preview) return;
   $('#log-sighting', box).onclick = () => sightingModal(S.pests, async (body) => {
     await api(`/nuvolve/app/api/portal/${token}/sightings`, { body });
     toast('Thanks. Your technician will check it.');

@@ -1,4 +1,5 @@
-// The animated Nuvolve logo shown once when the app opens (login, the office app, the tech app, the portal).
+// The animated Nuvolve logo shown once when the app opens (login, the office app, the tech app). Not on the customer
+// pages: those carry the pest company's brand, and a customer opening a pay link shouldn't wait.
 // It only plays when the connection can carry it: no Data Saver, no reduced motion, online, a connection
 // the browser rates fast, and the video actually ready inside a short wait. Otherwise the page opens
 // at once with the still logo, so nobody on one bar of signal waits for an animation.

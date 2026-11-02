@@ -2,7 +2,8 @@
 
 const EST_STATUS = { draft: ['Draft', ''], sent: ['Sent', 'blue'], viewed: ['Opened', 'blue'], accepted: ['Signed', 'green'], declined: ['Declined', 'red'], expired: ['Expired', 'yellow'] };
 const estPill = (s) => { const [l, c] = EST_STATUS[s] || [s, '']; return `<span class="pill ${c}">${esc(l)}</span>`; };
-const estLink = (e) => `${location.origin}/nuvolve/app/sign/${e.token}`;
+// Signed and expiring when the server gave one (src/links.js); the bare token works for staff only.
+const estLink = (e) => `${location.origin}/nuvolve/app/sign/${e.link_token || e.token}`;
 const perYear = { one_time: 1, monthly: 12, bimonthly: 6, quarterly: 4, yearly: 1 };
 
 // ---------- estimate builder ----------

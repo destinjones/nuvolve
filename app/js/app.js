@@ -42,6 +42,21 @@ const initialBody = (f) => (f.has_initial && f.initial_price !== '' ? { initial_
 const portalUrl = (token) => `${location.origin}/nuvolve/app/portal/${token}`;
 
 // ---------- startup ----------
+// One way in while sign-up is invite-only (SIGNUP_MODE=waitlist on the server, or the static demo, which sets
+// NUVOLVE_SIGNUP_URL): the founding-shops page. Returns that address, or null when the sign-up form is open
+// (always with an invite code in the link).
+async function signupDoor() {
+  if (window.NUVOLVE_SIGNUP_URL) return window.NUVOLVE_SIGNUP_URL;
+  if (new URLSearchParams(location.search).get('invite')) return null;
+  try { return (await api('/nuvolve/app/api/signup-mode')).mode === 'waitlist' ? '/beta?from=signup' : null; } catch { return null; }
+}
+
+window.addEventListener('hashchange', async () => {
+  if (location.hash !== '#signup' || BOOT) return;
+  const door = await signupDoor();
+  if (door) location.replace(door);
+});
+
 async function boot() {
   const reset = location.hash.match(/^#reset=(.+)$/);
   if (reset) return renderReset(reset[1]);
@@ -50,6 +65,10 @@ async function boot() {
   } catch (e) {
     if (e.status === 401) {
       const s = await api('/nuvolve/app/api/setup-status');
+      if (location.hash === '#signup' && !s.needsSetup) {
+        const door = await signupDoor();
+        if (door) return location.replace(door);
+      }
       return s.needsSetup || location.hash === '#signup' ? renderSetup() : renderLogin();
     }
     root.innerHTML = `<div class="alert err">${esc(e.message)}</div>`;
@@ -86,6 +105,14 @@ function renderLogin(company) {
       <p style="text-align:center">New here? <a href="#signup" id="to-signup"><b>Start your free 14-day trial</b></a><br><span class="small muted">No credit card needed.</span></p>
     </div>${LOGIN_LINKS}</div></div>`;
   $('#to-signup').onclick = (e) => { e.preventDefault(); location.hash = '#signup'; renderSetup(); };
+  signupDoor().then((door) => {
+    const a = $('#to-signup');
+    if (!door || !a) return;
+    a.href = door;
+    a.onclick = null;
+    a.innerHTML = '<b>Apply to be a founding shop</b>';
+    if (a.nextElementSibling && a.nextElementSibling.nextElementSibling) a.nextElementSibling.nextElementSibling.textContent = 'Accounts open in small batches during the beta.';
+  });
   $('#forgot').onclick = () => modal('Reset your password', '<div class="field"><label>Your login email</label><input name="email" type="email"></div>', [
     { label: 'Cancel' },
     { label: 'Email me a reset link', cls: 'primary', onClick: async (m) => { await api('/nuvolve/app/api/forgot-password', { body: formData(m) }); toast('If that email is on the team, a reset link is on its way'); } },
@@ -149,6 +176,8 @@ function renderSetup() {
         <div class="field"><label>Company phone</label><input name="company_phone" placeholder="(555) 555-0100"></div>
         <div class="field"><label>Shop or home base address</label><input name="shop_address" id="su-addr" placeholder="123 Main St, Dallas, TX 75201">
           <div class="hint">Routes start and end here.</div></div>
+        <div class="field"><label>Country</label><select name="country"><option value="US" selected>United States</option><option value="CA">Canada</option><option value="MX">Mexico</option><option value="OTHER">Somewhere else</option></select>
+          <div class="hint">Nuvolve works the US way for now: state pesticide records, texting rules and payments.</div></div>
         <div class="row">
           <div class="field"><label>Your name</label><input name="name" required></div>
           <div class="field"><label>Your email (login)</label><input name="email" type="email" required></div>
@@ -171,17 +200,18 @@ function renderSetup() {
       await api('/nuvolve/app/api/signup', { body });
       location.href = '/nuvolve/app/';
     } catch (err) {
-      if (/Join the waitlist/.test(err.message)) return renderWaitlist($('#f [name=email]').value, $('#f [name=company_name]').value);
+      if (/Join the waitlist|join the waitlist/.test(err.message)) return renderWaitlist($('#f [name=email]').value, $('#f [name=company_name]').value, /United States/.test(err.message) ? err.message : '');
       toast(err.message, true);
     }
   };
 }
 
 // Invite-only sign-up (SIGNUP_MODE=waitlist): say so plainly and keep their email instead of losing them.
-function renderWaitlist(email = '', company = '') {
+// `note` replaces the "batches" wording (a company outside the US is told why instead).
+function renderWaitlist(email = '', company = '', note = '') {
   root.innerHTML = `<div class="login-wrap"><div class="login" style="max-width:520px"><div class="card">
-    <h1>Accounts open in batches</h1>
-    <p class="muted">We're opening Nuvolve to a few pest companies at a time so each one gets a hand moving in. Leave your email and we'll send your invite, usually within a week.</p>
+    <h1>${note ? 'Not in your country yet' : 'Accounts open in batches'}</h1>
+    <p class="muted">${note ? esc(note) : "We're opening Nuvolve to a few pest companies at a time so each one gets a hand moving in. Leave your email and we'll send your invite, usually within a week."}</p>
     <form id="wl">
       <div class="field"><label>Email</label><input name="email" type="email" required value="${esc(email)}"></div>
       <div class="row"><div class="field"><label>Company</label><input name="company" value="${esc(company)}"></div>
@@ -232,13 +262,16 @@ const NAV = [
   ['#/settings', '⚙️', 'Settings', 'admin'],
   ['#/platform', '🛰️', 'Companies', 'platform'],
 ];
+// Pages a company's feature flags can turn off (src/flags.js); the server refuses their routes too.
+const NAV_FLAGS = { '#/ask': 'assistant', '#/whats-new': 'whats_new' };
 function navHtml() {
   const can = (n) => (n[3] !== 'admin' || BOOT.me.isAdmin) && (n[3] !== 'manager' || BOOT.me.isManager)
-    && (n[3] !== 'platform' || BOOT.me.isPlatformAdmin || BOOT.me.platformAdminUnconfirmed);
+    && (n[3] !== 'platform' || BOOT.me.isPlatformAdmin || BOOT.me.platformAdminUnconfirmed)
+    && (!NAV_FLAGS[n[0]] || BOOT.me.flags?.[NAV_FLAGS[n[0]]] !== false);
   const items = NV.navList(NAV).filter((n) => n[0] === '§' || can(n));
   return items.filter((n, i) => n[0] !== '§' || (items[i + 1] && items[i + 1][0] !== '§')).map((n) => (n[0] === '§'
     ? `<div class="nav-section">${n[1]}</div>`
-    : `<a href="${n[0]}" data-href="${n[0]}"><span class="ico">${n[1]}</span>${n[2]}${n[0] === '#/reviews' && BOOT.review_unread ? `<span class="badge">${BOOT.review_unread}</span>` : ''}</a>`)).join('');
+    : `<a href="${n[0]}" data-href="${n[0]}"><span class="ico">${n[1]}</span>${n[2]}${n[0] === '#/reviews' && BOOT.review_unread ? `<span class="badge">${BOOT.review_unread}</span>` : ''}${n[0] === '#/whats-new' && BOOT.whatsNew?.unread ? `<span class="badge">${BOOT.whatsNew.unread}</span>` : ''}</a>`)).join('');
 }
 
 function renderShell() {
@@ -600,7 +633,9 @@ async function pageCustomer(view, id) {
   view.innerHTML = `
     <div class="small" style="margin-bottom:8px"><a href="#/customers">← Customers</a></div>
     <div class="hero">
-      <div class="hero-photo">${home?.lat != null ? `<img src="${housePhoto(home)}" alt="Satellite view of ${esc(home.address)}" loading="eager"><span class="pin"></span>`
+      <div class="hero-photo">${home?.lat != null ? (houseFrontUrl(home)
+          ? `<img src="${houseFrontUrl(home, 640, 320)}" data-aerial="${esc(housePhoto(home))}" alt="Front of ${esc(home.address)}" loading="eager" title="Click to see the house bigger"><span class="hero-zoom">⤢ Front of house</span>`
+          : `<img src="${housePhoto(home)}" alt="Satellite view of ${esc(home.address)}" loading="eager" title="Click to see the house bigger"><span class="pin"></span>`)
         : `<div class="nophoto">${commercial ? '🏢' : '🏠'}<div class="small">${home ? 'Address not on the map yet' : 'No service address yet'}</div></div>`}
         <span class="hero-type ${commercial ? 'comm' : 'res'}">${commercial ? '🏢 Commercial' : '🏠 Residential'}</span>
       </div>
@@ -611,7 +646,7 @@ async function pageCustomer(view, id) {
         <div class="muted">${c.phone ? `<a href="tel:${esc(c.phone)}">${esc(c.phone)}</a>` : 'No phone'} · ${c.email ? `<a href="mailto:${esc(c.email)}">${esc(c.email)}</a>` : 'No email'}</div>
         <div class="hero-tags">${c.location && multiBranch() ? `<span class="pill">📍 ${esc(c.location)}</span>` : ''}${c.autopay ? '<span class="pill green">Autopay</span>' : ''}${c.balance > 0 ? `<span class="pill yellow">${money(c.balance)} due</span>` : '<span class="pill green">Paid up</span>'}${home?.access_notes ? `<span class="pill">🔑 ${esc(home.access_notes)}</span>` : ''}<span id="risk-tag"></span>${NV.slots('customer.tags', { c, home })}</div>
         ${home?.lat != null ? `<div class="actions small" style="margin-top:8px">
-          <a class="btn sm" target="_blank" href="https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${home.lat},${home.lng}">🏠 Street view</a>
+          <button class="btn sm" id="a-house">🏠 See the house</button>
           <a class="btn sm" target="_blank" href="${mapsLink(home)}">🧭 Directions</a></div>` : ''}
       </div>
       <div class="actions hero-actions">
@@ -668,7 +703,7 @@ async function pageCustomer(view, id) {
           <div class="card-head"><h2>Service addresses</h2><button class="btn sm" id="a-prop">+ Add address</button></div>
           ${c.properties.map((p, i) => `${p.lat != null && i > 0 ? `<div class="house" data-lat="${p.lat}" data-lng="${p.lng}"></div>
             <div class="actions small" style="margin:6px 0">
-              <a class="btn sm" target="_blank" href="https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${p.lat},${p.lng}">🏠 Street view</a>
+              <button class="btn sm" data-house="${i}">🏠 See the house</button>
               <a class="btn sm" target="_blank" href="https://www.google.com/maps/search/?api=1&query=${p.lat},${p.lng}">🛰️ Google Maps</a>
               <a class="btn sm" target="_blank" href="${mapsLink(p)}">🧭 Directions</a></div>` : ''}
             <div style="padding:8px 0;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:8px">
@@ -720,6 +755,21 @@ async function pageCustomer(view, id) {
       </div>
     </div>`;
 
+  // The house photo: Street View of the front, and the aerial photo when Google has none. Click it to see it big.
+  const heroImg = $('.hero-photo img', view);
+  if (heroImg) {
+    heroImg.style.cursor = 'zoom-in';
+    heroImg.onclick = () => openHousePhoto(home);
+    heroImg.onerror = () => {
+      if (!heroImg.dataset.aerial || heroImg.dataset.fell) return;
+      heroImg.dataset.fell = 1;
+      heroImg.src = heroImg.dataset.aerial;
+      const z = $('.hero-zoom', view);
+      if (z) z.textContent = '⤢ From above';
+    };
+  }
+  if ($('#a-house')) $('#a-house').onclick = () => openHousePhoto(home);
+  $$('[data-house]', view).forEach((b) => (b.onclick = () => openHousePhoto(c.properties[+b.dataset.house])));
   $('#a-visit').onclick = () => scheduleVisitModal(c);
   estimatesCard($('#est-card'), c);
   riskBadge($('#risk-tag'), c.id);
@@ -956,8 +1006,10 @@ function takePaymentModal(c, invoice) {
   else customerPicker(box, showForm);
 }
 
-function payLinkModal(c) {
-  const url = portalUrl(c.portal_token);
+// The link is made by the server: it is signed and expires (src/links.js).
+async function payLinkModal(c) {
+  let url = c.portal_link_token ? portalUrl(c.portal_link_token) : null;
+  if (!url) { try { url = (await api(`/nuvolve/app/api/customers/${c.id}/portal-link`)).url; } catch { url = portalUrl(c.portal_token); } }
   const subject = encodeURIComponent(`Your account with ${BOOT.settings.company_name || 'us'}`);
   const body = encodeURIComponent(`Hi ${c.first_name || ''},\n\nYou can see your balance, pay online, and request service here:\n${url}\n\nThank you!\n${BOOT.settings.company_name || ''}`);
   const sms = encodeURIComponent(`${BOOT.settings.company_name || ''}: view and pay your bill here ${url}`);

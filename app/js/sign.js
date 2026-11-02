@@ -10,6 +10,7 @@ const withPhone = (text, phone) => esc(text).replace('{phone}', `<a href="tel:${
 
 async function load() {
   try { D = await api(`/nuvolve/app/api/sign/${token}`); } catch (e) {
+    if (e.status === 410) return expiredLink(app, 'sign', token, e.message);
     app.innerHTML = `<div class="wrap" style="margin-top:40px"><div class="card"><h2>${esc(t('Link not found'))}</h2><p>${esc(t(e.message))}</p></div></div>`;
     return;
   }
